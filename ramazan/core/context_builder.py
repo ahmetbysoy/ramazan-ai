@@ -80,7 +80,8 @@ CONSTRAINTS:
 1. Only modify files listed in target files: {', '.join(task.files) if task.files else 'Specified in task'}.
 2. Comply strictly with architecture rules.
 3. Write clean, robust, and verifiable code.
-4. Include unit tests or test updates for all new/modified logic.
+4. Include unit tests or test updates for all new/modified logic. Always write Python unit tests (tests/test_*.py) to test functionality, classes, or HTML/JS structures so they pass in pytest.
+
 
 ACCEPTANCE CRITERIA:
 {criteria_formatted}
