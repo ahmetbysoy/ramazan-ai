@@ -19,7 +19,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "ramazan = ramazan.cli:app",
+            "ramazan = ramazan.cli:main",
         ],
     },
 )

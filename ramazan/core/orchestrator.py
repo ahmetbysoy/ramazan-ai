@@ -6,7 +6,17 @@ Implements the Master Orchestration Algorithm (Section 49).
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
-from rich.console import Console
+
+try:
+    from rich.console import Console
+    console = Console()
+except ImportError:
+    class FallbackConsole:
+        def print(self, *args, **kwargs):
+            import re
+            for a in args:
+                print(re.sub(r'\[/?[a-zA-Z0-9_\s#=]+\]', '', str(a)))
+    console = FallbackConsole()
 
 from ramazan.config import RamazanConfig
 from ramazan.schemas.task import Task, TaskStatus
@@ -29,7 +39,6 @@ from ramazan.agents.architect_agent import ArchitectAgent
 from ramazan.audit.final_audit import FinalAuditor
 
 logger = logging.getLogger("ramazan.orchestrator")
-console = Console()
 
 
 class OrchestrationResult:

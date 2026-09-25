@@ -1,17 +1,115 @@
 """
 CLI Entry Point for RAMAZAN AI.
 Multi-Agent Autonomous Software Engineering System.
+Features dual execution: native Typer & Rich when available, with an automatic
+built-in argparse & standard-library fallback for minimal environments (Termux, Alpine, clean containers).
 """
 
+import argparse
 import json
 import os
+import sys
+import re
 from pathlib import Path
-from typing import Optional
-import typer
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.progress import Progress, BarColumn, TextColumn
+from typing import List, Optional
+
+# --- DUAL BACKEND IMPORT (TYPER & RICH WITH ZERO-DEPENDENCY FALLBACKS) ---
+try:
+    import typer
+    from typer import Typer, Option, Argument, Exit
+    HAS_TYPER = True
+except ImportError:
+    HAS_TYPER = False
+    typer = None
+
+    class Exit(SystemExit):
+        def __init__(self, code: int = 0):
+            super().__init__(code)
+
+    def Option(default=None, *args, **kwargs):
+        return default
+
+    def Argument(default=None, *args, **kwargs):
+        return None if default is ... else default
+
+    class Typer:
+        def __init__(self, *args, **kwargs):
+            self.commands = {}
+            self.sub_typers = {}
+
+        def command(self, name=None, *args, **kwargs):
+            def decorator(f):
+                cmd_name = name or f.__name__.replace("cmd_", "").replace("_", "-")
+                self.commands[cmd_name] = f
+                return f
+            return decorator
+
+        def add_typer(self, sub, name=None, *args, **kwargs):
+            self.sub_typers[name] = sub
+
+        def __call__(self, *args, **kwargs):
+            return run_argparse_cli()
+
+
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.progress import Progress, BarColumn, TextColumn
+    HAS_RICH = True
+except ImportError:
+    HAS_RICH = False
+
+    class Console:
+        def print(self, *args, **kwargs):
+            for a in args:
+                cleaned = re.sub(r'\[/?[a-zA-Z0-9_\s#=:\-\.\/\(\)]+\]', '', str(a))
+                print(cleaned)
+
+    class Table:
+        def __init__(self, title="", show_lines=False):
+            self.title = title
+            self.columns = []
+            self.rows = []
+
+        def add_column(self, name, **kwargs):
+            self.columns.append(name)
+
+        def add_row(self, *row):
+            self.rows.append([str(c) for c in row])
+
+        def __str__(self):
+            lines = [f"\n=== {self.title} ==="]
+            if self.columns:
+                lines.append(" | ".join(self.columns))
+                lines.append("-" * 60)
+            for r in self.rows:
+                cleaned = [re.sub(r'\[/?[a-zA-Z0-9_\s#=:\-\.\/\(\)]+\]', '', c) for c in r]
+                lines.append(" | ".join(cleaned))
+            lines.append("=" * (len(lines[0]) if lines else 40) + "\n")
+            return "\n".join(lines)
+
+    class Panel:
+        def __init__(self, content, title="", border_style=""):
+            self.content = content
+            self.title = title
+
+        def __str__(self):
+            cleaned = re.sub(r'\[/?[a-zA-Z0-9_\s#=:\-\.\/\(\)]+\]', '', str(self.content))
+            return f"\n┌── {self.title} ──┐\n{cleaned}\n└{'─' * (len(self.title) + 8)}┘\n"
+
+
+def prompt_input(text: str, hide_input: bool = False) -> str:
+    if HAS_TYPER and typer is not None:
+        try:
+            return typer.prompt(text, hide_input=hide_input)
+        except Exception:
+            pass
+    import getpass
+    if hide_input:
+        return getpass.getpass(f"{text}: ")
+    return input(f"{text}: ")
+
 
 from ramazan.config import RamazanConfig, find_project_root
 from ramazan.core.orchestrator import Orchestrator
@@ -23,13 +121,12 @@ from ramazan.tools.git_manager import GitManager
 from ramazan.schemas.task import Task
 from ramazan.schemas.adr import ADRManager
 
-app = typer.Typer(
+app = Typer(
     name="ramazan",
     help="RAMAZAN AI - Multi-Agent Autonomous Software Engineering Orchestrator",
-    add_completion=False,
 )
-task_app = typer.Typer(name="task", help="Task management and inspection commands")
-adr_app = typer.Typer(name="adr", help="Architecture Decision Record (ADR) commands")
+task_app = Typer(name="task", help="Task management and inspection commands")
+adr_app = Typer(name="adr", help="Architecture Decision Record (ADR) commands")
 
 app.add_typer(task_app, name="task")
 app.add_typer(adr_app, name="adr")
@@ -38,7 +135,7 @@ console = Console()
 
 @app.command()
 def init(
-    project_name: str = typer.Option(None, "--name", "-n", help="Name of the project"),
+    project_name: Optional[str] = Option(None, "--name", "-n", help="Name of the project"),
 ):
     """
     Initialize the .ramazan orchestration directory structure in current directory.
@@ -88,6 +185,16 @@ def init(
         title="RAMAZAN AI",
         border_style="green"
     ))
+
+
+@app.command(name="version")
+def version():
+    """
+    Print the RAMAZAN AI version.
+    """
+    import ramazan
+    ver = getattr(ramazan, "__version__", "0.1.0")
+    console.print(f"[bold cyan]RAMAZAN AI[/bold cyan] v{ver} (Autonomous Software Engineering Agent)")
 
 
 @app.command()
@@ -140,14 +247,14 @@ def status():
 
 @task_app.command(name="add")
 def cmd_task_add(
-    title: str = typer.Argument(..., help="Task title"),
-    desc: str = typer.Option("", "--desc", "-d", help="Task description"),
-    task_type: str = typer.Option("implementation", "--type", "-t", help="Task type (implementation, bugfix, test, refactor, documentation)"),
-    priority: str = typer.Option("medium", "--priority", "-p", help="Priority (critical, high, medium, low)"),
-    complexity: str = typer.Option("medium", "--complexity", "-c", help="Complexity (low, medium, high, critical)"),
-    deps: Optional[str] = typer.Option(None, "--deps", help="Comma-separated dependency task IDs (e.g. TASK-001,TASK-002)"),
-    files: Optional[str] = typer.Option(None, "--files", help="Comma-separated file paths in scope"),
-    criteria: Optional[str] = typer.Option(None, "--criteria", help="Comma-separated acceptance criteria"),
+    title: str = Argument(..., help="Task title"),
+    desc: str = Option("", "--desc", "-d", help="Task description"),
+    task_type: str = Option("implementation", "--type", "-t", help="Task type (implementation, bugfix, test, refactor, documentation)"),
+    priority: str = Option("medium", "--priority", "-p", help="Priority (critical, high, medium, low)"),
+    complexity: str = Option("medium", "--complexity", "-c", help="Complexity (low, medium, high, critical)"),
+    deps: Optional[str] = Option(None, "--deps", help="Comma-separated dependency task IDs (e.g. TASK-001,TASK-002)"),
+    files: Optional[str] = Option(None, "--files", help="Comma-separated file paths in scope"),
+    criteria: Optional[str] = Option(None, "--criteria", help="Comma-separated acceptance criteria"),
 ):
     """
     Create and register a new deterministic engineering task.
@@ -193,7 +300,7 @@ def cmd_task_list():
 
 @task_app.command(name="reset")
 def cmd_task_reset(
-    task_id: str = typer.Argument(..., help="Task ID to reset, e.g. TASK-001"),
+    task_id: str = Argument(..., help="Task ID to reset, e.g. TASK-001"),
 ):
     """
     Section 23 & Spec: Reset an ESCALATED, BLOCKED, or FAILED task back to READY
@@ -223,12 +330,12 @@ def cmd_task_reset(
         ))
     except KeyError:
         console.print(f"[bold red]Task '{task_id}' not found.[/bold red]")
-        raise typer.Exit(1)
+        raise Exit(1)
 
 
 @app.command(name="reset")
 def alias_task_reset(
-    task_id: str = typer.Argument(..., help="Task ID to reset"),
+    task_id: str = Argument(..., help="Task ID to reset"),
 ):
     """
     Quick alias to reset an ESCALATED task back to READY (ramazan reset TASK-XXX).
@@ -240,12 +347,12 @@ def alias_task_reset(
 
 @adr_app.command(name="new")
 def cmd_adr_new(
-    decision: str = typer.Argument(..., help="Core architecture decision"),
-    context: str = typer.Option("", "--context", "-c", help="Context and problem motivation"),
-    alternatives: Optional[str] = typer.Option(None, "--alternatives", "-a", help="Comma-separated alternatives considered"),
-    reason: str = typer.Option("", "--reason", "-r", help="Reason for choosing this option"),
-    consequences: str = typer.Option("", "--consequences", help="Positive and negative trade-offs"),
-    title: str = typer.Option("", "--title", help="ADR Title (optional)"),
+    decision: str = Argument(..., help="Core architecture decision"),
+    context: str = Option("", "--context", "-c", help="Context and problem motivation"),
+    alternatives: Optional[str] = Option(None, "--alternatives", "-a", help="Comma-separated alternatives considered"),
+    reason: str = Option("", "--reason", "-r", help="Reason for choosing this option"),
+    consequences: str = Option("", "--consequences", help="Positive and negative trade-offs"),
+    title: str = Option("", "--title", help="ADR Title (optional)"),
 ):
     """
     Section 16: Create and append a new Architecture Decision Record (ADR).
@@ -298,8 +405,8 @@ def cmd_adr_list():
 
 @app.command()
 def plan(
-    req_file: Optional[Path] = typer.Option(None, "--file", "-f", help="Path to requirements file"),
-    use_mock: bool = typer.Option(False, "--mock", help="Use deterministic mock model for offline planning"),
+    req_file: Optional[Path] = Option(None, "--file", "-f", help="Path to requirements file"),
+    use_mock: bool = Option(False, "--mock", help="Use deterministic mock model for offline planning"),
 ):
     """
     Break down requirements into deterministic tasks using the Orchestrator Agent.
@@ -311,13 +418,12 @@ def plan(
     req_path = req_file or (root_dir / ".ramazan" / "requirements.md")
     if not req_path.exists():
         console.print(f"[red]Requirements file not found at {req_path}[/red]")
-        raise typer.Exit(1)
+        raise Exit(1)
 
     requirements = req_path.read_text(encoding="utf-8")
     arch = orchestrator.context_builder.load_architecture_rules()
 
     console.print("[cyan]Orchestrator Agent analyzing requirements and planning task graph...[/cyan]")
-    tasks = orchestrator.orchestrator_agent = orchestrator.router.get_orchestrator_model()
 
     from ramazan.agents.orchestrator_agent import OrchestratorAgent
     orch_agent = OrchestratorAgent(
@@ -340,8 +446,8 @@ def plan(
 
 @app.command()
 def run(
-    mock: bool = typer.Option(False, "--mock", help="Run with deterministic simulation for development/testing"),
-    max_steps: int = typer.Option(50, "--max-steps", help="Maximum task iterations"),
+    mock: bool = Option(False, "--mock", help="Run with deterministic simulation for development/testing"),
+    max_steps: int = Option(50, "--max-steps", help="Maximum task iterations"),
 ):
     """
     Execute the master orchestration loop until all tasks are complete or blocked.
@@ -370,12 +476,12 @@ def run(
             title="RAMAZAN AI - BLOCKED",
             border_style="red"
         ))
-        raise typer.Exit(1)
+        raise Exit(1)
 
 
 @app.command()
 def step(
-    mock: bool = typer.Option(False, "--mock", help="Run step with deterministic simulation"),
+    mock: bool = Option(False, "--mock", help="Run step with deterministic simulation"),
 ):
     """
     Execute a single next ready task through the full lifecycle.
@@ -393,7 +499,7 @@ def step(
 
 @app.command()
 def test(
-    command: Optional[str] = typer.Option(None, "--command", "-c", help="Test command to execute"),
+    command: Optional[str] = Option(None, "--command", "-c", help="Test command to execute"),
 ):
     """
     Execute the objective non-LLM Test Engine.
@@ -409,7 +515,7 @@ def test(
     else:
         console.print(f"[bold red]FAILED[/bold red] (Exit: {res.exitCode}, Duration: {res.duration}s)")
         console.print(res.stderr or res.stdout)
-        raise typer.Exit(res.exitCode)
+        raise Exit(res.exitCode)
 
 
 @app.command()
@@ -428,15 +534,16 @@ def audit():
         border_style="green" if report.passed else "red"
     ))
     if not report.passed:
-        raise typer.Exit(1)
+        raise Exit(1)
 
 
 from ramazan.llm.key_detector import SmartKeyDetector
 
+
 @app.command()
 def configure(
-    key: Optional[str] = typer.Option(None, "--key", "-k", help="API key to automatically identify and configure"),
-    mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Autonomy mode: step_by_step, semi_autonomous, fully_autonomous"),
+    key: Optional[str] = Option(None, "--key", "-k", help="API key to automatically identify and configure"),
+    mode: Optional[str] = Option(None, "--mode", "-m", help="Autonomy mode: step_by_step, semi_autonomous, fully_autonomous"),
 ):
     """
     Auto-detect API key provider, configure dynamic agent routing, and set autonomy mode.
@@ -448,13 +555,13 @@ def configure(
         valid_modes = ["step_by_step", "semi_autonomous", "fully_autonomous"]
         if mode.lower() not in valid_modes:
             console.print(f"[red]Invalid mode '{mode}'. Choose from: {', '.join(valid_modes)}[/red]")
-            raise typer.Exit(1)
+            raise Exit(1)
         config.system.autonomyMode = mode.lower()
         console.print(f"[green]Autonomy mode updated to:[/green] [bold cyan]{config.system.autonomyMode}[/bold cyan]")
 
     target_key = key
     if not target_key and not mode:
-        target_key = typer.prompt("Enter AI Provider API Key or Endpoint (Gemini, Claude, OpenAI, DeepSeek, Groq, Ollama)", hide_input=True)
+        target_key = prompt_input("Enter AI Provider API Key or Endpoint (Gemini, Claude, OpenAI, DeepSeek, Groq, Ollama)", hide_input=True)
 
     if target_key:
         detected = SmartKeyDetector.detect_provider(target_key)
@@ -493,8 +600,8 @@ def configure(
 
 @app.command(name="ui")
 def launch_ui(
-    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host address"),
-    port: int = typer.Option(8000, "--port", "-p", help="Bind port number"),
+    host: str = Option("0.0.0.0", "--host", "-h", help="Bind host address"),
+    port: int = Option(8000, "--port", "-p", help="Bind port number"),
 ):
     """
     Launch the interactive RAMAZAN AI Web Dashboard.
@@ -517,8 +624,8 @@ def launch_ui(
 
 @app.command(name="web")
 def launch_web(
-    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host address"),
-    port: int = typer.Option(8000, "--port", "-p", help="Bind port number"),
+    host: str = Option("0.0.0.0", "--host", "-h", help="Bind host address"),
+    port: int = Option(8000, "--port", "-p", help="Bind port number"),
 ):
     """
     Alias for 'ramazan ui'.
@@ -526,6 +633,165 @@ def launch_web(
     launch_ui(host=host, port=port)
 
 
-if __name__ == "__main__":
-    app()
+# --- BUILT-IN STANDARD LIBRARY ARGPARSE RUNNER (FOR MINIMAL ENVIRONMENTS) ---
 
+def run_argparse_cli(argv: Optional[List[str]] = None):
+    parser = argparse.ArgumentParser(
+        prog="ramazan",
+        description="RAMAZAN AI - Multi-Agent Autonomous Software Engineering Orchestrator"
+    )
+    parser.add_argument("--version", "-v", action="version", version="RAMAZAN AI v0.1.0")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # version
+    subparsers.add_parser("version", help="Print RAMAZAN AI version")
+
+    # init
+    p_init = subparsers.add_parser("init", help="Initialize .ramazan directory")
+    p_init.add_argument("--name", "-n", dest="project_name", default=None, help="Project name")
+
+    # status
+    subparsers.add_parser("status", help="Show project status")
+
+    # plan
+    p_plan = subparsers.add_parser("plan", help="Plan tasks from requirements")
+    p_plan.add_argument("--file", "-f", dest="req_file", default=None, help="Requirements file")
+    p_plan.add_argument("--mock", action="store_true", default=False, help="Offline mock planning")
+
+    # run
+    p_run = subparsers.add_parser("run", help="Run orchestration loop")
+    p_run.add_argument("--mock", action="store_true", default=False, help="Offline simulation")
+    p_run.add_argument("--max-steps", dest="max_steps", type=int, default=50, help="Max steps")
+
+    # step
+    p_step = subparsers.add_parser("step", help="Run single step")
+    p_step.add_argument("--mock", action="store_true", default=False, help="Offline simulation")
+
+    # test
+    p_test = subparsers.add_parser("test", help="Run test suite")
+    p_test.add_argument("--command", "-c", dest="test_cmd", default=None, help="Test command")
+
+    # audit
+    subparsers.add_parser("audit", help="Run final audit gate")
+
+    # ui / web
+    p_ui = subparsers.add_parser("ui", help="Launch Web UI dashboard")
+    p_ui.add_argument("--host", default="0.0.0.0", help="Host address")
+    p_ui.add_argument("--port", "-p", type=int, default=8000, help="Port")
+
+    p_web = subparsers.add_parser("web", help="Launch Web UI dashboard")
+    p_web.add_argument("--host", default="0.0.0.0", help="Host address")
+    p_web.add_argument("--port", "-p", type=int, default=8000, help="Port")
+
+    # reset
+    p_reset = subparsers.add_parser("reset", help="Reset task back to READY")
+    p_reset.add_argument("task_id", help="Task ID e.g. TASK-001")
+
+    # configure
+    p_cfg = subparsers.add_parser("configure", help="Auto-detect API key or configure mode")
+    p_cfg.add_argument("--key", "-k", default=None, help="API key")
+    p_cfg.add_argument("--mode", "-m", default=None, help="Autonomy mode")
+
+    # task
+    p_task = subparsers.add_parser("task", help="Task operations")
+    task_subs = p_task.add_subparsers(dest="task_command")
+    task_subs.add_parser("list", help="List tasks")
+    p_t_add = task_subs.add_parser("add", help="Add new task")
+    p_t_add.add_argument("title", help="Task title")
+    p_t_add.add_argument("--desc", "-d", default="", help="Task description")
+    p_t_add.add_argument("--type", "-t", default="implementation", help="Task type")
+    p_t_add.add_argument("--priority", "-p", default="medium", help="Priority")
+    p_t_add.add_argument("--complexity", "-c", default="medium", help="Complexity")
+    p_t_add.add_argument("--deps", default=None, help="Dependencies")
+    p_t_add.add_argument("--files", default=None, help="Files")
+    p_t_add.add_argument("--criteria", default=None, help="Acceptance criteria")
+
+    p_t_res = task_subs.add_parser("reset", help="Reset task")
+    p_t_res.add_argument("task_id", help="Task ID")
+
+    # adr
+    p_adr = subparsers.add_parser("adr", help="ADR operations")
+    adr_subs = p_adr.add_subparsers(dest="adr_command")
+    adr_subs.add_parser("list", help="List ADRs")
+    p_adr_new = adr_subs.add_parser("new", help="New ADR")
+    p_adr_new.add_argument("decision", help="ADR Decision")
+    p_adr_new.add_argument("--context", "-c", default="", help="Context")
+    p_adr_new.add_argument("--alternatives", "-a", default=None, help="Alternatives")
+    p_adr_new.add_argument("--reason", "-r", default="", help="Reason")
+    p_adr_new.add_argument("--consequences", default="", help="Consequences")
+    p_adr_new.add_argument("--title", default="", help="Title")
+
+    args = parser.parse_args(argv)
+
+    if not args.command:
+        parser.print_help()
+        return
+
+    cmd = args.command
+    if cmd == "version":
+        version()
+    elif cmd == "init":
+        init(project_name=args.project_name)
+    elif cmd == "status":
+        status()
+    elif cmd == "plan":
+        plan(req_file=Path(args.req_file) if args.req_file else None, use_mock=args.mock)
+    elif cmd == "run":
+        run(mock=args.mock, max_steps=args.max_steps)
+    elif cmd == "step":
+        step(mock=args.mock)
+    elif cmd == "test":
+        test(command=args.test_cmd)
+    elif cmd == "audit":
+        audit()
+    elif cmd == "configure":
+        configure(key=args.key, mode=args.mode)
+    elif cmd in ["ui", "web"]:
+        launch_ui(host=args.host, port=args.port)
+    elif cmd == "reset":
+        cmd_task_reset(task_id=args.task_id)
+    elif cmd == "task":
+        if args.task_command == "list" or not args.task_command:
+            cmd_task_list()
+        elif args.task_command == "add":
+            cmd_task_add(
+                title=args.title,
+                desc=args.desc,
+                task_type=args.type,
+                priority=args.priority,
+                complexity=args.complexity,
+                deps=args.deps,
+                files=args.files,
+                criteria=args.criteria,
+            )
+        elif args.task_command == "reset":
+            cmd_task_reset(task_id=args.task_id)
+    elif cmd == "adr":
+        if args.adr_command == "list" or not args.adr_command:
+            cmd_adr_list()
+        elif args.adr_command == "new":
+            cmd_adr_new(
+                decision=args.decision,
+                context=args.context,
+                alternatives=args.alternatives,
+                reason=args.reason,
+                consequences=args.consequences,
+                title=args.title,
+            )
+
+
+def main():
+    if HAS_TYPER and typer is not None:
+        try:
+            app()
+            return
+        except SystemExit:
+            raise
+        except Exception:
+            run_argparse_cli()
+    else:
+        run_argparse_cli()
+
+
+if __name__ == "__main__":
+    main()
