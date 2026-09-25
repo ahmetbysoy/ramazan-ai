@@ -31,6 +31,7 @@ class ModelsConfig(BaseModel):
 class SystemConfig(BaseModel):
     name: str = "RAMAZAN AI"
     version: str = "1.0"
+    autonomyMode: str = "step_by_step"  # "step_by_step", "semi_autonomous", "fully_autonomous"
     maxRetries: int = 3
     maxBudgetUsd: float = 20.0
     budgetWarningThreshold: float = 0.8

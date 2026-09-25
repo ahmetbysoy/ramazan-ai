@@ -4,6 +4,7 @@ Multi-Agent Autonomous Software Engineering System.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
 import typer
@@ -264,5 +265,66 @@ def audit():
         raise typer.Exit(1)
 
 
+from ramazan.llm.key_detector import SmartKeyDetector
+
+@app.command()
+def configure(
+    key: Optional[str] = typer.Option(None, "--key", "-k", help="API key to automatically identify and configure"),
+    mode: Optional[str] = typer.Option(None, "--mode", "-m", help="Autonomy mode: step_by_step, semi_autonomous, fully_autonomous"),
+):
+    """
+    Auto-detect API key provider, configure dynamic agent routing, and set autonomy mode.
+    """
+    root_dir = find_project_root()
+    config = RamazanConfig.load(root_dir)
+
+    if mode:
+        valid_modes = ["step_by_step", "semi_autonomous", "fully_autonomous"]
+        if mode.lower() not in valid_modes:
+            console.print(f"[red]Invalid mode '{mode}'. Choose from: {', '.join(valid_modes)}[/red]")
+            raise typer.Exit(1)
+        config.system.autonomyMode = mode.lower()
+        console.print(f"[green]Autonomy mode updated to:[/green] [bold cyan]{config.system.autonomyMode}[/bold cyan]")
+
+    target_key = key
+    if not target_key and not mode:
+        target_key = typer.prompt("Enter AI Provider API Key or Endpoint (Gemini, Claude, OpenAI, DeepSeek, Groq, Ollama)", hide_input=True)
+
+    if target_key:
+        detected = SmartKeyDetector.detect_provider(target_key)
+        if detected:
+            provider, env_var, models = detected
+            console.print(f"[bold green]Detected Provider:[/bold green] [cyan]{provider.upper()}[/cyan] (Env: {env_var})")
+
+            # Save in environment and .ramazan/.env
+            os.environ[env_var] = target_key
+            env_file = root_dir / ".ramazan" / ".env"
+            env_lines = []
+            if env_file.exists():
+                env_lines = [l for l in env_file.read_text().splitlines() if not l.startswith(f"{env_var}=")]
+            env_lines.append(f"{env_var}={target_key}")
+            env_file.write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+
+            # Auto re-map agents dynamically based on available key
+            config = SmartKeyDetector.auto_map_providers({provider: target_key}, config)
+            console.print(Panel(
+                f"[bold]Orchestrator:[/bold] {config.models.orchestrator.model} ({config.models.orchestrator.provider})\n"
+                f"[bold]Architect:[/bold] {config.models.architect.model} ({config.models.architect.provider})\n"
+                f"[bold]Worker (High):[/bold] {config.models.worker.high.model} ({config.models.worker.high.provider})\n"
+                f"[bold]Worker (Medium):[/bold] {config.models.worker.medium.model} ({config.models.worker.medium.provider})\n"
+                f"[bold]Worker (Low):[/bold] {config.models.worker.low.model} ({config.models.worker.low.provider})\n"
+                f"[bold]Reviewer:[/bold] {config.models.reviewer.model} ({config.models.reviewer.provider})\n"
+                f"[bold]Autonomy Mode:[/bold] {config.system.autonomyMode}",
+                title=f"RAMAZAN AI - Dynamic Model Mapping for {provider.upper()}",
+                border_style="green"
+            ))
+        else:
+            console.print("[yellow]Could not automatically identify provider from key prefix. You can configure manually in .ramazan/config.json[/yellow]")
+
+    config.save(root_dir)
+    console.print("[green]Configuration saved to .ramazan/config.json successfully.[/green]")
+
+
 if __name__ == "__main__":
     app()
+
