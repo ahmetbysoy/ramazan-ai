@@ -91,12 +91,23 @@ CRITICAL RULES:
                 clean = match.group(1).strip()
 
         try:
-            raw_tasks = json.loads(clean)
-            if isinstance(raw_tasks, dict) and "tasks" in raw_tasks:
-                raw_tasks = raw_tasks["tasks"]
+            parsed = json.loads(clean)
+            if isinstance(parsed, dict):
+                if "tasks" in parsed and isinstance(parsed["tasks"], list):
+                    raw_tasks = parsed["tasks"]
+                elif "id" in parsed:
+                    raw_tasks = [parsed]
+                else:
+                    raise ValueError(f"Unrecognized dict format: {list(parsed.keys())}")
+            elif isinstance(parsed, list):
+                raw_tasks = parsed
+            else:
+                raise ValueError(f"Expected list or dict, got {type(parsed)}")
 
             tasks = []
             for item in raw_tasks:
+                if not isinstance(item, dict):
+                    continue
                 # Ensure defaults
                 item.setdefault("status", "PENDING")
                 item.setdefault("retryCount", 0)
@@ -105,6 +116,9 @@ CRITICAL RULES:
                 item.setdefault("testStatus", "NOT_RUN")
                 task = Task.model_validate(item)
                 tasks.append(task)
+
+            if not tasks:
+                raise ValueError("No valid tasks parsed from response")
             return tasks
         except Exception as e:
             logger.error(f"Failed to parse planned tasks JSON: {e}")

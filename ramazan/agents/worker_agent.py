@@ -77,6 +77,14 @@ class WorkerAgent(BaseAgent):
             for mod in worker_output.fileModifications:
                 logger.info(f"Worker writing file: {mod.path}")
                 self.fs.write_file(mod.path, mod.content)
+                if mod.path.endswith(".py"):
+                    parent = Path(mod.path).parent
+                    curr = parent
+                    while curr != Path(".") and str(curr) not in ["", "."]:
+                        init_f = curr / "__init__.py"
+                        if not (self.root_dir / init_f).exists():
+                            self.fs.write_file(str(init_f), "")
+                        curr = curr.parent
 
             for test_mod in worker_output.tests:
                 logger.info(f"Worker writing test file: {test_mod.path}")

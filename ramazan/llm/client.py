@@ -69,10 +69,9 @@ class LLMClient:
         Deterministic mock responder for testing and bootstrapping without live API credentials.
         Extracts requirements from prompt and provides appropriate structured responses.
         """
-        # If Reviewer prompt
-        if "expert code reviewer" in prompt or "CHANGES_REQUIRED" in prompt:
-            # If prompt mentions test failure or obvious flaws, flag changes required
-            if "FAIL" in prompt or "error" in prompt.lower() and "zero division" in prompt.lower():
+        # 1. Reviewer Prompt Detection
+        if "expert code reviewer" in prompt or "ROLE: You are an expert code reviewer" in (system_prompt or ""):
+            if "FAIL" in prompt or ("error" in prompt.lower() and "zero division" in prompt.lower()):
                 content = json.dumps({
                     "status": "CHANGES_REQUIRED",
                     "severity": "HIGH",
@@ -95,34 +94,168 @@ class LLMClient:
                     "issues": []
                 }, indent=2)
 
-        # If Worker prompt
-        elif "REQUIRED OUTPUT FORMAT" in prompt and "fileModifications" in prompt:
-            content = json.dumps({
-                "explanation": "Implemented requested software engineering functionality and verified unit tests.",
-                "fileModifications": [],
-                "tests": [],
-                "potentialRisks": "None identified."
-            }, indent=2)
-
-        # If Planning / Task breakdown prompt
-        elif "TASK BREAKDOWN" in prompt or "plan" in prompt.lower():
+        # 2. Planning & Orchestrator Breakdown Detection
+        elif "TASK SCHEMA REQUIREMENTS" in prompt or "Break down the following requirements" in prompt or (system_prompt and "Chief Software Engineering Orchestrator" in system_prompt):
             content = json.dumps([
                 {
                     "id": "TASK-001",
-                    "title": "Project Foundation & Core Domain Model",
-                    "description": "Establish initial data models and validation logic.",
+                    "title": "Core Domain Models and Schema Validation",
+                    "description": "Implement baseline domain data structures and input validation logic.",
                     "type": "implementation",
                     "priority": "high",
-                    "complexity": "medium",
+                    "complexity": "low",
                     "dependencies": [],
-                    "files": ["src/domain/models.py", "tests/test_models.py"],
+                    "files": ["src/domain/models.py"],
                     "acceptanceCriteria": [
                         "Domain model defined with attributes.",
                         "Validation methods implemented.",
-                        "Unit tests coverage >= 80%."
+                        "Unit tests verify valid and invalid inputs."
+                    ]
+                },
+                {
+                    "id": "TASK-002",
+                    "title": "Business Service Layer and Repository Interface",
+                    "description": "Implement business service logic and repository abstractions.",
+                    "type": "implementation",
+                    "priority": "high",
+                    "complexity": "medium",
+                    "dependencies": ["TASK-001"],
+                    "files": ["src/domain/service.py"],
+                    "acceptanceCriteria": [
+                        "Service operations implemented.",
+                        "Repository interfaces defined.",
+                        "Unit tests pass with 100% assertions."
+                    ]
+                },
+                {
+                    "id": "TASK-003",
+                    "title": "Public API Controller and Health Verification",
+                    "description": "Expose public interface endpoints and health check diagnostics.",
+                    "type": "implementation",
+                    "priority": "medium",
+                    "complexity": "low",
+                    "dependencies": ["TASK-002"],
+                    "files": ["src/domain/api.py"],
+                    "acceptanceCriteria": [
+                        "Health check diagnostic route operational.",
+                        "Service endpoints respond with valid JSON.",
+                        "Integration tests pass."
                     ]
                 }
             ], indent=2)
+
+        # If Worker prompt
+        elif "REQUIRED OUTPUT FORMAT" in prompt and "fileModifications" in prompt:
+            # Generate genuine code based on task files mentioned in prompt
+            file_mods = []
+            test_mods = []
+
+            if "src/domain/models.py" in prompt or "TASK-001" in prompt:
+                file_mods.append({
+                    "path": "src/domain/models.py",
+                    "content": '''"""Core Domain Models"""
+from typing import Optional
+from pydantic import BaseModel, Field
+
+class EntityModel(BaseModel):
+    id: str = Field(description="Unique entity identifier")
+    name: str = Field(description="Entity name")
+    status: str = Field(default="ACTIVE")
+    metadata: dict = Field(default_factory=dict)
+
+    def is_active(self) -> bool:
+        return self.status == "ACTIVE"
+'''
+                })
+                test_mods.append({
+                    "path": "tests/test_domain_models.py",
+                    "content": '''import pytest
+from src.domain.models import EntityModel
+
+def test_entity_model_creation():
+    entity = EntityModel(id="E-001", name="Test Entity")
+    assert entity.id == "E-001"
+    assert entity.is_active() is True
+    assert entity.status == "ACTIVE"
+
+def test_entity_inactive():
+    entity = EntityModel(id="E-002", name="Inactive", status="ARCHIVED")
+    assert entity.is_active() is False
+'''
+                })
+
+            elif "src/domain/service.py" in prompt or "TASK-002" in prompt:
+                file_mods.append({
+                    "path": "src/domain/service.py",
+                    "content": '''"""Business Service Layer"""
+from typing import Dict, List, Optional
+from src.domain.models import EntityModel
+
+class EntityService:
+    def __init__(self):
+        self._store: Dict[str, EntityModel] = {}
+
+    def register_entity(self, entity: EntityModel) -> EntityModel:
+        self._store[entity.id] = entity
+        return entity
+
+    def get_entity(self, entity_id: str) -> Optional[EntityModel]:
+        return self._store.get(entity_id)
+
+    def list_active(self) -> List[EntityModel]:
+        return [e for e in self._store.values() if e.is_active()]
+'''
+                })
+                test_mods.append({
+                    "path": "tests/test_domain_service.py",
+                    "content": '''import pytest
+from src.domain.models import EntityModel
+from src.domain.service import EntityService
+
+def test_service_crud():
+    svc = EntityService()
+    entity = EntityModel(id="E-100", name="Service Entity")
+    svc.register_entity(entity)
+    retrieved = svc.get_entity("E-100")
+    assert retrieved is not None
+    assert retrieved.name == "Service Entity"
+    assert len(svc.list_active()) == 1
+'''
+                })
+
+            elif "src/domain/api.py" in prompt or "TASK-003" in prompt:
+                file_mods.append({
+                    "path": "src/domain/api.py",
+                    "content": '''"""Public API Gateway"""
+from src.domain.service import EntityService
+
+class AppGateway:
+    def __init__(self):
+        self.service = EntityService()
+
+    def health_check(self) -> dict:
+        return {"status": "HEALTHY", "service": "ramazan_engine", "version": "1.0.0"}
+'''
+                })
+                test_mods.append({
+                    "path": "tests/test_domain_api.py",
+                    "content": '''import pytest
+from src.domain.api import AppGateway
+
+def test_health_check():
+    gw = AppGateway()
+    status = gw.health_check()
+    assert status["status"] == "HEALTHY"
+    assert "version" in status
+'''
+                })
+
+            content = json.dumps({
+                "explanation": "Implemented domain components with 100% test coverage and architecture compliance.",
+                "fileModifications": file_mods,
+                "tests": test_mods,
+                "potentialRisks": "None identified."
+            }, indent=2)
         else:
             content = json.dumps({"status": "SUCCESS", "message": "Simulated output."})
 
