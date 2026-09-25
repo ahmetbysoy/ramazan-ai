@@ -8,9 +8,10 @@ from typing import List, Tuple
 
 # Patterns that indicate potentially leaked secrets or credentials
 SECRET_PATTERNS = [
-    re.compile(r"(?i)(api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|bearer[_-]?token)\s*[:=]\s*['\"][a-zA-Z0-9_\-]{16,}['\"]"),
-    re.compile(r"sk-[a-zA-Z0-9]{20,}"),  # OpenAI style
+    re.compile(r"(?i)([a-z0-9_-]*(key|secret|token|password|credential)[a-z0-9_-]*)\s*[:=]\s*['\"][a-zA-Z0-9_\-]{16,}['\"]"),
+    re.compile(r"sk-[a-zA-Z0-9_-]{20,}"),  # OpenAI style (including sk-proj-)
     re.compile(r"ghp_[a-zA-Z0-9]{36}"),   # GitHub Personal Access Token
+    re.compile(r"AKIA[0-9A-Z]{16}"),      # AWS Access Key ID
     re.compile(r"xox[baprs]-[a-zA-Z0-9]{10,}"), # Slack token
     re.compile(r"AIza[0-9A-Za-z-_]{35}"), # Google API Key
 ]

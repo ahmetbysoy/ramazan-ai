@@ -10,6 +10,8 @@ def test_orchestrator_pipeline_execution(tmp_path: Path):
     ramazan_dir = tmp_path / ".ramazan"
     ramazan_dir.mkdir(parents=True, exist_ok=True)
     (ramazan_dir / "architecture.md").write_text("# Architecture\nStandard rules", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# Math App\nTest project documentation with sufficient description.", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("pytest\n", encoding="utf-8")
 
     config = RamazanConfig()
     config.system.autoGitCommit = False

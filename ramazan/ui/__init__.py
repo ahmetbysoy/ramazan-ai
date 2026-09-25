@@ -2,6 +2,9 @@
 Web Dashboard for RAMAZAN AI.
 """
 
-from .server import create_app
-
-__all__ = ["create_app"]
+try:
+    from .server import create_app
+    __all__ = ["create_app"]
+except ImportError:
+    create_app = None
+    __all__ = []

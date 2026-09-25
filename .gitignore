@@ -44,6 +44,7 @@ tests/.cache/
 
 # RAMAZAN AI logs & test run outputs (keep tasks/state, ignore runtime artifacts)
 .ramazan/logs/
+.ramazan/snapshots/
 .ramazan/tests/
 .ramazan/FINAL_AUDIT.md
 .ramazan/chat_history.json

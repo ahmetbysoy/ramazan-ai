@@ -1,34 +1,39 @@
 """
 Configuration management for RAMAZAN AI.
+Enforces strict schema validation with extra="forbid" (TASK-102).
 """
 
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, ValidationError
 
 
-class ModelConfig(BaseModel):
-    model: str = "claude-3-7-sonnet-20250219"
+class StrictBaseModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ModelConfig(StrictBaseModel):
+    model: str = "claude-3-5-sonnet-latest"
     provider: str = "anthropic"
     temperature: float = 0.2
 
 
-class WorkerModels(BaseModel):
+class WorkerModels(StrictBaseModel):
     low: ModelConfig = Field(default_factory=lambda: ModelConfig(model="gpt-4o-mini", provider="openai", temperature=0.2))
-    medium: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-5-haiku-20241022", provider="anthropic", temperature=0.2))
-    high: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-7-sonnet-20250219", provider="anthropic", temperature=0.2))
-    critical: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-7-sonnet-20250219", provider="anthropic", temperature=0.1))
+    medium: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-5-haiku-latest", provider="anthropic", temperature=0.2))
+    high: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-5-sonnet-latest", provider="anthropic", temperature=0.2))
+    critical: ModelConfig = Field(default_factory=lambda: ModelConfig(model="gpt-4o", provider="openai", temperature=0.1))
 
 
-class ModelsConfig(BaseModel):
-    orchestrator: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-7-sonnet-20250219", provider="anthropic", temperature=0.2))
-    architect: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-7-sonnet-20250219", provider="anthropic", temperature=0.2))
+class ModelsConfig(StrictBaseModel):
+    orchestrator: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-5-sonnet-latest", provider="anthropic", temperature=0.2))
+    architect: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-5-sonnet-latest", provider="anthropic", temperature=0.2))
     worker: WorkerModels = Field(default_factory=WorkerModels)
-    reviewer: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-7-sonnet-20250219", provider="anthropic", temperature=0.1))
+    reviewer: ModelConfig = Field(default_factory=lambda: ModelConfig(model="claude-3-5-sonnet-latest", provider="anthropic", temperature=0.1))
 
 
-class SystemConfig(BaseModel):
+class SystemConfig(StrictBaseModel):
     name: str = "RAMAZAN AI"
     version: str = "1.0"
     autonomyMode: str = "step_by_step"  # "step_by_step", "semi_autonomous", "fully_autonomous"
@@ -42,24 +47,35 @@ class SystemConfig(BaseModel):
     logLevel: str = "INFO"
 
 
-class ToolsConfig(BaseModel):
+class ToolsConfig(StrictBaseModel):
     testCommand: str = "pytest -v"
     buildCommand: Optional[str] = None
     lintCommand: str = "pytest -q"
     allowTerminal: bool = True
+    policyVersion: str = "2.0.0"
     forbiddenCommands: List[str] = Field(
         default_factory=lambda: [
             "rm -rf /",
+            "rm -rf ./src",
             "mkfs",
             ":(){ :|:& };:",
             "dd if=/dev/zero",
+            "git reset --hard",
+            "git clean -fd",
+            "git push --force",
+            "chmod -R 777",
+            "curl | sh",
+            "terraform destroy",
+            "kubectl delete",
+            "docker system prune",
+            "DROP TABLE",
             "shutdown",
             "reboot"
         ]
     )
 
 
-class RamazanConfig(BaseModel):
+class RamazanConfig(StrictBaseModel):
     system: SystemConfig = Field(default_factory=SystemConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
@@ -78,19 +94,32 @@ class RamazanConfig(BaseModel):
                 return cls()
         return cls()
 
-    def save(self, root_dir: Optional[Path] = None):
+    @classmethod
+    def load_strict(cls, root_dir: Optional[Path] = None) -> "RamazanConfig":
+        """Loads and raises ValidationError if config schema is invalid or has unknown fields."""
+        if root_dir is None:
+            root_dir = find_project_root()
+        config_path = root_dir / ".ramazan" / "config.json"
+        if not config_path.exists():
+            return cls()
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return cls.model_validate(data)
+
+    def save(self, root_dir: Optional[Path] = None) -> Path:
         if root_dir is None:
             root_dir = find_project_root()
         config_path = root_dir / ".ramazan" / "config.json"
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as f:
-            f.write(self.model_dump_json(indent=2))
+            f.write(self.model_dump_json(indent=2) + "\n")
+        return config_path
 
 
-def find_project_root(start_dir: Optional[Path] = None) -> Path:
-    current = start_dir or Path.cwd()
-    current = current.resolve()
-    for p in [current, *current.parents]:
-        if (p / ".ramazan").exists():
-            return p
-    return current
+def find_project_root(start: Optional[Path] = None) -> Path:
+    curr = (start or Path.cwd()).resolve()
+    while curr != curr.parent:
+        if (curr / ".ramazan").exists():
+            return curr
+        curr = curr.parent
+    return Path.cwd().resolve()

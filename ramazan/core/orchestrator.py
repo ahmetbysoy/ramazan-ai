@@ -36,7 +36,6 @@ from ramazan.llm.cost_tracker import CostTracker
 from ramazan.agents.worker_agent import WorkerAgent, WorkerOutput, ScopeViolationError, is_test_path
 from ramazan.agents.reviewer_agent import ReviewerAgent
 from ramazan.agents.architect_agent import ArchitectAgent
-from ramazan.audit.final_audit import FinalAuditor
 
 logger = logging.getLogger("ramazan.orchestrator")
 
@@ -67,6 +66,7 @@ class Orchestrator:
         self.fs = FileSystemTools(self.root_dir)
         self.test_engine = TestEngine(self.root_dir, default_command=self.config.tools.testCommand)
         self.git_manager = GitManager(self.root_dir)
+        from ramazan.audit.final_audit import FinalAuditor
         self.final_auditor = FinalAuditor(self.root_dir, test_command=self.config.tools.testCommand)
 
         # Specialized Agents

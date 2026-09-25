@@ -1,11 +1,10 @@
 import pytest
-from pathlib import Path
+from ramazan.ui.games import MONKEY_GAME_HTML
 
 
-def test_monkey_game_file_exists():
-    game_path = Path("monkey_game.html")
-    assert game_path.exists(), "monkey_game.html should exist"
-    content = game_path.read_text(encoding="utf-8")
+def test_monkey_game_template_validity():
+    content = MONKEY_GAME_HTML
+    assert len(content) > 1000
 
     # 1. Mobile Responsiveness Checks
     assert "<meta name=\"viewport\"" in content

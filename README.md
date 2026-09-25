@@ -69,7 +69,7 @@ ARCHITECT        WORKER       REVIEWER      TEST ENGINE
 │   ├── llm/                      # LiteLLM evrensel istemcisi & Bütçe/Maliyet takibi
 │   ├── tools/                    # Dosya sistemi, terminal, test motoru, git yöneticisi
 │   └── audit/                    # Nihai denetim (Final Audit) motoru
-└── tests/                        # 100% kapsamlı birim ve entegrasyon testleri
+└── tests/                        # Kapsamlı test paketi (85+ otomatik test, pytest-cov ile ölçülen 64%+ repo coverage)
 ```
 
 ---
@@ -96,6 +96,7 @@ pytest -v
 | Komut | Açıklama |
 |---|---|
 | `ramazan init` | Mevcut dizinde `.ramazan` çalışma alanı yapısını ve git deposunu ilklendirir. |
+| `ramazan doctor` | Sistem sağlığı, geçerli model isimleri ve katı şema teşhisini çalıştırır. |
 | `ramazan ui` / `ramazan web` | Kullanıcı dostu Web Arayüzünü (`http://0.0.0.0:8000`) başlatır. |
 | `ramazan configure` | Akıllı API anahtarı algılama ve otonomi modunu ayarlama sihirbazı. |
 | `ramazan status` | Proje durumunu, ilerleme yüzdesini, aktif görevleri ve görev tablosunu gösterir. |

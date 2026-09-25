@@ -70,17 +70,13 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
 
     @app.get("/game", response_class=HTMLResponse)
     def play_game():
-        game_path = proj_root / "monkey_game.html"
-        if game_path.exists():
-            return game_path.read_text(encoding="utf-8")
-        raise HTTPException(status_code=404, detail="monkey_game.html bulunamadı.")
+        from ramazan.ui.games import MONKEY_GAME_HTML
+        return HTMLResponse(MONKEY_GAME_HTML)
 
     @app.get("/game/cops", response_class=HTMLResponse)
     def play_cops_game():
-        game_path = proj_root / "cops_robbers_game.html"
-        if game_path.exists():
-            return game_path.read_text(encoding="utf-8")
-        raise HTTPException(status_code=404, detail="cops_robbers_game.html bulunamadı.")
+        from ramazan.ui.games import COPS_ROBBERS_GAME_HTML
+        return HTMLResponse(COPS_ROBBERS_GAME_HTML)
 
     @app.get("/preview/{file_path:path}")
     def preview_file(file_path: str):
@@ -398,7 +394,7 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
                 for t in planned:
                     orch.task_engine.add_task(t)
 
-                orch.state_manager.set_total_tasks(len(orch.task_engine.tasks))
+                orch.state_manager.recompute(orch.task_engine)
 
                 task_bullets = "\n".join([f"- **`{t.id}`**: {t.title} *(Öncelik: {t.priority.upper()}, Karmaşıklık: {t.complexity.upper()})*" for t in planned])
 
@@ -485,7 +481,7 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
         for t in planned:
             orch.task_engine.add_task(t)
 
-        orch.state_manager.set_total_tasks(len(orch.task_engine.tasks))
+        orch.state_manager.recompute(orch.task_engine)
         return {"success": True, "count": len(planned), "tasks": [t.model_dump() for t in planned]}
 
     @app.post("/api/test")

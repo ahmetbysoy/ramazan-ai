@@ -1,0 +1,30 @@
+{
+  "id": "TASK-004",
+  "title": "Zıplayan Maymun Mobil Oyunu (Single-File HTML & JS)",
+  "description": "HTML5 Canvas tabanlı, dokunmatik kontrollü, muz toplamalı ve fizik motorlu tek dosya zıplayan maymun oyunu.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "COMPLETED",
+  "dependencies": [],
+  "files": [
+    "monkey_game.html",
+    "tests/test_monkey_game.py"
+  ],
+  "acceptanceCriteria": [
+    "Tek dosya HTML5 Canvas ve responsive mobil viewport",
+    "Fizik motoru: Yerçekimi, platform sıçraması, zıplama gücü",
+    "Dokunmatik butonlar (◀ ▶) ve ekran dokunma kontrolleri",
+    "Muz toplama ve puan sayacı mekanizması",
+    "Birim testleri ve nesnel test motoru doğrulaması"
+  ],
+  "assignedAgent": "Worker",
+  "assignedModel": "claude-3-5-haiku-latest",
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": "All unit tests in test_monkey_game.py passed.",
+  "reviewFeedback": "Code satisfies acceptance criteria, passes automated tests, and adheres to mobile responsive constraints.",
+  "lastError": null
+}

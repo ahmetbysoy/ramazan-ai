@@ -187,6 +187,28 @@ def init(
     ))
 
 
+@app.command(name="doctor")
+def doctor():
+    """
+    Run environment and configuration diagnostics, model validation, and schema verification.
+    """
+    from ramazan.audit.doctor import RamazanDoctor
+    root_dir = find_project_root()
+    doc = RamazanDoctor(root_dir)
+    success, results = doc.run_diagnostics()
+
+    console.print("[bold cyan]RAMAZAN AI - System & Model Diagnostics[/bold cyan]\n")
+    for r in results:
+        status_tag = "[bold green]PASS[/bold green]" if r.passed else "[bold red]FAIL[/bold red]"
+        console.print(f"{status_tag} {r.name}: {r.message}")
+
+    if not success:
+        console.print("\n[bold red]Doctor reported failures. Please check your configuration.[/bold red]")
+        raise Exit(1)
+    else:
+        console.print("\n[bold green]All doctor diagnostics passed successfully![/bold green]")
+
+
 @app.command(name="version")
 def version():
     """
@@ -283,7 +305,7 @@ def cmd_task_add(
     task_engine.add_task(task)
 
     state_mgr = StateManager(root_dir)
-    state_mgr.set_total_tasks(len(task_engine.tasks))
+    state_mgr.recompute(task_engine)
 
     console.print(f"[bold green]Created task {task.id}:[/bold green] {task.title}")
     if not task.acceptanceCriteria:
@@ -437,7 +459,7 @@ def plan(
     for t in planned_tasks:
         orchestrator.task_engine.add_task(t)
 
-    orchestrator.state_manager.set_total_tasks(len(orchestrator.task_engine.tasks))
+    orchestrator.state_manager.recompute(orchestrator.task_engine)
 
     console.print(f"[bold green]Successfully generated {len(planned_tasks)} deterministic tasks![/bold green]")
     for t in planned_tasks:
@@ -674,6 +696,9 @@ def run_argparse_cli(argv: Optional[List[str]] = None):
     # audit
     subparsers.add_parser("audit", help="Run final audit gate")
 
+    # doctor
+    subparsers.add_parser("doctor", help="Run system & model diagnostics")
+
     # ui / web
     p_ui = subparsers.add_parser("ui", help="Launch Web UI dashboard")
     p_ui.add_argument("--host", default="0.0.0.0", help="Host address")
@@ -744,6 +769,8 @@ def run_argparse_cli(argv: Optional[List[str]] = None):
         test(command=args.test_cmd)
     elif cmd == "audit":
         audit()
+    elif cmd == "doctor":
+        doctor()
     elif cmd == "configure":
         configure(key=args.key, mode=args.mode)
     elif cmd in ["ui", "web"]:

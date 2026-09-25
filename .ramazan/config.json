@@ -2,21 +2,24 @@
   "system": {
     "name": "RAMAZAN AI",
     "version": "1.0",
+    "autonomyMode": "step_by_step",
     "maxRetries": 3,
     "maxBudgetUsd": 20.0,
     "budgetWarningThreshold": 0.8,
     "autoGitCommit": true,
     "humanInTheLoopOnCritical": true,
+    "strictScope": true,
+    "reviewEnabled": true,
     "logLevel": "INFO"
   },
   "models": {
     "orchestrator": {
-      "model": "claude-3-7-sonnet-20250219",
+      "model": "claude-3-5-sonnet-latest",
       "provider": "anthropic",
       "temperature": 0.2
     },
     "architect": {
-      "model": "claude-3-7-sonnet-20250219",
+      "model": "claude-3-5-sonnet-latest",
       "provider": "anthropic",
       "temperature": 0.2
     },
@@ -27,36 +30,48 @@
         "temperature": 0.2
       },
       "medium": {
-        "model": "claude-3-5-haiku-20241022",
+        "model": "claude-3-5-haiku-latest",
         "provider": "anthropic",
         "temperature": 0.2
       },
       "high": {
-        "model": "claude-3-7-sonnet-20250219",
+        "model": "claude-3-5-sonnet-latest",
         "provider": "anthropic",
         "temperature": 0.2
       },
       "critical": {
-        "model": "claude-3-7-sonnet-20250219",
-        "provider": "anthropic",
+        "model": "gpt-4o",
+        "provider": "openai",
         "temperature": 0.1
       }
     },
     "reviewer": {
-      "model": "claude-3-7-sonnet-20250219",
+      "model": "claude-3-5-sonnet-latest",
       "provider": "anthropic",
       "temperature": 0.1
     }
   },
   "tools": {
     "testCommand": "pytest -v",
+    "buildCommand": null,
     "lintCommand": "pytest -q",
     "allowTerminal": true,
+    "policyVersion": "2.0.0",
     "forbiddenCommands": [
       "rm -rf /",
+      "rm -rf ./src",
       "mkfs",
       ":(){ :|:& };:",
       "dd if=/dev/zero",
+      "git reset --hard",
+      "git clean -fd",
+      "git push --force",
+      "chmod -R 777",
+      "curl | sh",
+      "terraform destroy",
+      "kubectl delete",
+      "docker system prune",
+      "DROP TABLE",
       "shutdown",
       "reboot"
     ]
