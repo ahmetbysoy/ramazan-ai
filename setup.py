@@ -14,6 +14,8 @@ setup(
         "pyyaml>=6.0.2",
         "jsonschema>=4.23.0",
         "networkx>=3.4.0",
+        "fastapi>=0.115.0",
+        "uvicorn>=0.30.0",
     ],
     entry_points={
         "console_scripts": [

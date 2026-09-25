@@ -1,4 +1,6 @@
 import pytest
+
+fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from pathlib import Path
 from ramazan.ui.server import create_app
