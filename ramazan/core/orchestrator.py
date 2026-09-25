@@ -4,6 +4,7 @@ Implements the Master Orchestration Algorithm (Section 49).
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -260,6 +261,7 @@ class Orchestrator:
 
                 if action == CircuitBreakerAction.RETRY_WITH_FEEDBACK:
                     test_failure_context = f"{test_result.summary}\n{test_result.stderr or test_result.stdout}"
+                    time.sleep(2)
                     continue
                 else:
                     self._handle_circuit_breaker(task, test_result.summary, snapshot=snapshot)

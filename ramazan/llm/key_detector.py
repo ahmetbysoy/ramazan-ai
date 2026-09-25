@@ -53,15 +53,15 @@ PROVIDER_SIGNATURES = [
     {
         "provider": "gemini",
         "env_var": "GEMINI_API_KEY",
-        "pattern": re.compile(r"^AIza[0-9A-Za-z\-_]{35}$"),
+        "pattern": re.compile(r"^(AIza[0-9A-Za-z\-_]{35}|AQ\.[0-9A-Za-z\-_]{30,})$"),
         "name": "Google Gemini",
         "models": {
-            "orchestrator": "gemini/gemini-2.5-pro",
-            "architect": "gemini/gemini-2.5-pro",
-            "worker_high": "gemini/gemini-2.5-pro",
-            "worker_medium": "gemini/gemini-2.5-flash",
-            "worker_low": "gemini/gemini-2.5-flash",
-            "reviewer": "gemini/gemini-2.5-pro",
+            "orchestrator": "gemini-flash-lite-latest",
+            "architect": "gemini-flash-lite-latest",
+            "worker_high": "gemini-flash-lite-latest",
+            "worker_medium": "gemini-flash-lite-latest",
+            "worker_low": "gemini-flash-lite-latest",
+            "reviewer": "gemini-flash-lite-latest",
         }
     },
     {
@@ -140,7 +140,7 @@ class SmartKeyDetector:
         # Fallback heuristic checks
         if cleaned_key.startswith("sk-ant-"):
             return ("anthropic", "ANTHROPIC_API_KEY", PROVIDER_SIGNATURES[0]["models"])
-        elif cleaned_key.startswith("AIza"):
+        elif cleaned_key.startswith("AIza") or cleaned_key.startswith("AQ."):
             return ("gemini", "GEMINI_API_KEY", PROVIDER_SIGNATURES[2]["models"])
         elif cleaned_key.startswith("gsk_"):
             return ("groq", "GROQ_API_KEY", PROVIDER_SIGNATURES[4]["models"])
@@ -175,8 +175,8 @@ class SmartKeyDetector:
             orch_model = ModelConfig(model="gpt-4o", provider="openai", temperature=0.2)
             arch_model = ModelConfig(model="gpt-4o", provider="openai", temperature=0.2)
         elif has_gemini:
-            orch_model = ModelConfig(model="gemini/gemini-2.5-pro", provider="gemini", temperature=0.2)
-            arch_model = ModelConfig(model="gemini/gemini-2.5-pro", provider="gemini", temperature=0.2)
+            orch_model = ModelConfig(model="gemini-flash-lite-latest", provider="gemini", temperature=0.2)
+            arch_model = ModelConfig(model="gemini-flash-lite-latest", provider="gemini", temperature=0.2)
         elif has_deepseek:
             orch_model = ModelConfig(model="deepseek/deepseek-chat", provider="deepseek", temperature=0.2)
             arch_model = ModelConfig(model="deepseek/deepseek-reasoner", provider="deepseek", temperature=0.2)
@@ -197,10 +197,10 @@ class SmartKeyDetector:
             worker_high = ModelConfig(model="deepseek/deepseek-chat", provider="deepseek", temperature=0.2)
             worker_crit = ModelConfig(model="deepseek/deepseek-reasoner", provider="deepseek", temperature=0.1)
         elif has_gemini:
-            worker_low = ModelConfig(model="gemini/gemini-2.5-flash", provider="gemini", temperature=0.2)
-            worker_med = ModelConfig(model="gemini/gemini-2.5-flash", provider="gemini", temperature=0.2)
-            worker_high = ModelConfig(model="gemini/gemini-2.5-pro", provider="gemini", temperature=0.2)
-            worker_crit = ModelConfig(model="gemini/gemini-2.5-pro", provider="gemini", temperature=0.1)
+            worker_low = ModelConfig(model="gemini-flash-lite-latest", provider="gemini", temperature=0.2)
+            worker_med = ModelConfig(model="gemini-flash-lite-latest", provider="gemini", temperature=0.2)
+            worker_high = ModelConfig(model="gemini-flash-lite-latest", provider="gemini", temperature=0.2)
+            worker_crit = ModelConfig(model="gemini-flash-lite-latest", provider="gemini", temperature=0.1)
         elif has_anthropic:
             worker_low = ModelConfig(model="claude-3-5-haiku-20241022", provider="anthropic", temperature=0.2)
             worker_med = ModelConfig(model="claude-3-5-haiku-20241022", provider="anthropic", temperature=0.2)
@@ -223,7 +223,7 @@ class SmartKeyDetector:
         elif has_openai:
             reviewer_model = ModelConfig(model="gpt-4o", provider="openai", temperature=0.1)
         elif has_gemini:
-            reviewer_model = ModelConfig(model="gemini/gemini-2.5-pro", provider="gemini", temperature=0.1)
+            reviewer_model = ModelConfig(model="gemini-flash-lite-latest", provider="gemini", temperature=0.1)
         elif has_deepseek:
             reviewer_model = ModelConfig(model="deepseek/deepseek-reasoner", provider="deepseek", temperature=0.1)
         else:

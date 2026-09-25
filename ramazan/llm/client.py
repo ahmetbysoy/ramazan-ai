@@ -38,28 +38,51 @@ class LLMClient:
         try:
             import litellm
 
+            litellm_model = model
+            if (litellm_model.startswith("gemini-") or "gemini" in litellm_model) and not litellm_model.startswith("gemini/"):
+                litellm_model = f"gemini/{litellm_model}"
+
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
-            resp = litellm.completion(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-            )
+            candidate_models = [litellm_model]
+            if "gemini" in litellm_model:
+                for alt in ["gemini/gemini-flash-lite-latest", "gemini/gemini-3.5-flash-lite", "gemini/gemini-3.6-flash"]:
+                    if alt not in candidate_models:
+                        candidate_models.append(alt)
 
-            content = resp.choices[0].message.content or ""
-            usage = getattr(resp, "usage", None)
-            in_tok = getattr(usage, "prompt_tokens", 0) if usage else 0
-            out_tok = getattr(usage, "completion_tokens", 0) if usage else 0
+            last_err = None
+            for cur_model in candidate_models:
+                try:
+                    resp = litellm.completion(
+                        model=cur_model,
+                        messages=messages,
+                        temperature=temperature,
+                    )
 
-            return LLMResponse(
-                content=content,
-                model=model,
-                inputTokens=in_tok,
-                outputTokens=out_tok,
-            )
+                    content = resp.choices[0].message.content or ""
+                    usage = getattr(resp, "usage", None)
+                    in_tok = getattr(usage, "prompt_tokens", 0) if usage else 0
+                    out_tok = getattr(usage, "completion_tokens", 0) if usage else 0
+
+                    return LLMResponse(
+                        content=content,
+                        model=cur_model,
+                        inputTokens=in_tok,
+                        outputTokens=out_tok,
+                    )
+                except Exception as e:
+                    last_err = e
+                    err_msg = str(e).lower()
+                    if any(token in err_msg for token in ["503", "unavailable", "demand", "429", "resource_exhausted", "quota", "ratelimit"]):
+                        logger.warning(f"Model {cur_model} throttled or busy ({e}), trying alternate candidate...")
+                        continue
+                    raise e
+
+            if last_err:
+                raise last_err
         except Exception as e:
             logger.warning(f"LiteLLM call failed ({e}). Falling back to simulated response for continuity.")
             return self._generate_mock(model, prompt, system_prompt)

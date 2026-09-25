@@ -34,7 +34,8 @@ VALID_MODEL_PATTERNS = [
     r"^gpt-4(-turbo)?$",
     r"^o1(-mini|-preview)?$",
     r"^o3(-mini)?$",
-    r"^gemini-(1\.5|2\.0)-(pro|flash)(-latest)?$",
+    r"^(gemini/)?gemini-(flash|pro|flash-lite)(-latest)?$",
+    r"^(gemini/)?gemini-(1\.5|2\.0|2\.5|3\.0|3\.5|3\.6|3\.7|3\.8)-(pro|flash|flash-lite)(-latest)?$",
     r"^deepseek-(chat|reasoner|r1)$",
     r"^mock(-[a-zA-Z0-9_-]+)?$",
 ]

@@ -41,6 +41,10 @@ class TestEngine:
         logger.info(f"Running Test Suite: {cmd}")
         start_t = time.time()
 
+        env = dict(subprocess.os.environ)
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"src:.:{existing_pp}" if existing_pp else "src:."
+
         try:
             res = subprocess.run(
                 cmd,
@@ -48,6 +52,7 @@ class TestEngine:
                 cwd=str(self.root_dir),
                 capture_output=True,
                 text=True,
+                env=env,
                 timeout=timeout
             )
             duration = round(time.time() - start_t, 3)

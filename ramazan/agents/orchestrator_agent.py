@@ -72,7 +72,7 @@ Each item in your JSON array MUST adhere to this exact structure:
 CRITICAL RULES:
 1. Every task must be as small and self-contained as possible.
 2. Dependencies must form a Directed Acyclic Graph (DAG) with NO circular dependencies.
-3. Every implementation task MUST have target files and unit test files.
+3. Every implementation task MUST have target implementation files AND unit test files in its "files" array (e.g. files: ["src/path/to/file.py", "tests/test_file.py"]). NEVER create a separate task just for tests; each task must implement its code and tests together.
 4. Acceptance criteria must be objective and measurable (avoid vague words like 'works' or 'looks good').
 5. Output ONLY the raw JSON array.
 """

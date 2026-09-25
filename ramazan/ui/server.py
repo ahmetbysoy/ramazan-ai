@@ -68,16 +68,6 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
         path = _get_chat_history_path()
         path.write_text(json.dumps(messages, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    @app.get("/game", response_class=HTMLResponse)
-    def play_game():
-        from ramazan.ui.games import MONKEY_GAME_HTML
-        return HTMLResponse(MONKEY_GAME_HTML)
-
-    @app.get("/game/cops", response_class=HTMLResponse)
-    def play_cops_game():
-        from ramazan.ui.games import COPS_ROBBERS_GAME_HTML
-        return HTMLResponse(COPS_ROBBERS_GAME_HTML)
-
     @app.get("/preview/{file_path:path}")
     def preview_file(file_path: str):
         target = proj_root / file_path
@@ -86,13 +76,6 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
             if target.suffix in [".html", ".htm"]:
                 return HTMLResponse(content)
             return JSONResponse({"path": file_path, "content": content})
-        # Virtual embedded game template fallbacks
-        if file_path == "cops_robbers_game.html":
-            from ramazan.ui.games import COPS_ROBBERS_GAME_HTML
-            return HTMLResponse(COPS_ROBBERS_GAME_HTML)
-        if file_path == "monkey_game.html":
-            from ramazan.ui.games import MONKEY_GAME_HTML
-            return HTMLResponse(MONKEY_GAME_HTML)
         raise HTTPException(status_code=404, detail="Dosya bulunamadı.")
 
     @app.get("/api/status")
@@ -151,182 +134,64 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
 
             msg_lower = user_message.lower()
 
-            # 1. Hırsız Polis Oyunu (Cops and Robbers Game)
-            if any(w in msg_lower for w in ["hırsız", "polis", "cops", "robber"]):
-                task = Task(
-                    id="TASK-005",
-                    title="Hırsız Polis Mobil Oyunu (Single-File HTML & JS)",
-                    description="HTML5 Canvas tabanlı, mobil dokunmatik D-Pad ve Nitro kontrollü, polis yapay zekası, elmas/altın ganimetleri ve Web Audio ses efektli tek dosya mobil oyun.",
-                    type="implementation",
-                    priority="high",
-                    complexity="medium",
-                    dependencies=[],
-                    files=["cops_robbers_game.html", "tests/test_cops_game.py"],
-                    acceptanceCriteria=[
-                        "Tek dosya HTML5 Canvas ve responsive mobil viewport",
-                        "Mobil dokunmatik D-Pad (Yukarı, Aşağı, Sol, Sağ) ve Nitro Hızlandırıcı (Boost) butonları",
-                        "Polis Yapay Zekası (AI takip algoritması, seviye arttıkça çoğalan ve hızlanan polisler)",
-                        "Aranma seviyesi (Wanted Stars ⭐), altın/elmas ganimetleri ve puan sistemi",
-                        "Web Audio API osilatörleri ile harici dosya gerektirmeyen siren ve ganimet ses efektleri",
-                        "Birim testleri ve nesnel test motoru doğrulaması"
-                    ]
-                )
-                orch.task_engine.add_task(task)
-                orch.state_manager.start_task(task.id)
-
-                # Test execution
-                test_res = orch.test_engine.run_tests(command="pytest tests/test_cops_game.py -v")
-                task.testStatus = "PASSED" if test_res.passed else "FAILED"
-                task.reviewStatus = "APPROVED"
-                orch.task_engine.save_task(task)
-
-                # Git commit
-                commit_hash = orch.git_manager.commit_task(
-                    task_id=task.id,
-                    title=task.title,
-                    task_type=task.type,
-                    files=["cops_robbers_game.html", "tests/test_cops_game.py"]
-                ) or "commit_ok"
-
-                # Create Task Memory
-                mem = TaskMemory(
-                    taskId=task.id,
-                    completed="Hırsız Polis mobil oyunu tek dosya HTML/JS olarak kodlandı ve test edildi.",
-                    filesChanged=["cops_robbers_game.html", "tests/test_cops_game.py"],
-                    importantDecisions=[
-                        "Canvas 2D context ile dokunmatik D-Pad ve dinamik polis takip AI mekanizması kuruldu.",
-                        "Web Audio API osilatörleri ile harici kütüphane gerektirmeyen dinamik ses efektleri üretildi."
-                    ],
-                    problems=[],
-                    resolution="Tüm dokunmatik kontroller, polis AI takip mekaniği ve testler başarıyla doğrulandı.",
-                    tests=f"Birim testleri başarıyla geçti (Süre: {test_res.duration}s).",
-                    futureConsiderations="Harita engelleri, labirent binalar ve radar minimap eklenebilir."
-                )
-                mem_file = proj_root / ".ramazan" / "memory" / f"{task.id}.md"
-                mem_file.parent.mkdir(parents=True, exist_ok=True)
-                mem_file.write_text(mem.to_markdown(), encoding="utf-8")
-
-                orch.task_engine.update_task_status(task.id, "COMPLETED")
-                orch.state_manager.complete_task(task.id)
-
+            # 1. Selamlaşma ve Genel Sohbet
+            if re.search(r"\b(merhaba|selam|selamlar|günaydın|iyi günler|iyi akşamlar|sa|as|hey|hi|hello|nasılsın|naber)\b", msg_lower):
                 resp_text = (
-                    f"🚨 **Hırsız Polis Mobil Oyunu Başarıyla Kodlandı ve Doğrulandı!** 🚔\n\n"
-                    f"Tüm otonom mühendislik ve test süreçleri tamamlandı:\n\n"
-                    f"👷 **Worker Ajanı:**\n"
-                    f"- `cops_robbers_game.html` (HTML5 Canvas, dokunmatik D-Pad, Nitro Boost, Polis AI ve Web Audio siren sesleri)\n"
-                    f"- `tests/test_cops_game.py` (Mobil kontrol, bileşen ve oyun motoru doğrulama testleri)\n\n"
-                    f"🧪 **Test Engine (Gerçek pytest Çıktısı):**\n"
-                    f"- Durum: {'✅ **TÜM TESTLER GEÇTİ (PASSED)**' if test_res.passed else '❌ TESTLER BAŞARISIZ'}\n"
-                    f"- Süre: `{test_res.duration}s` | Exit Code: `{test_res.exitCode}`\n\n"
-                    f"🕵️ **Reviewer Ajanı:**\n"
-                    f"- Sonuç: `APPROVED` ✅ (Sıfır harici bağımlılık, responsive mobil dokunmatik kontroller)\n\n"
-                    f"💾 **Git Otomasyonu:**\n"
-                    f"- Commit: `feat: [TASK-005] Hırsız Polis Mobil Oyunu` (`{commit_hash[:7]}`)\n\n"
-                    f"Aşağıdaki **'🚨 Oyunu Canlı Oyna'** butonuna basarak oyunu doğrudan telefonunda tam ekran oynayabilirsin kanka!"
+                    "👋 **Merhaba kanka! Hoş geldin!**\n\n"
+                    "Ben **RAMAZAN AI**, senin çoklu ajan mimarisine sahip otonom yazılım mühendisliği orkestratörünüm. 🤖\n\n"
+                    "Bana geliştirmek istediğin herhangi bir yazılımı, servisi, aracı veya oyunu yazabilirsin. Ben senin için:\n"
+                    "- 🧠 **Gereksinimleri planlayıp** atomik görevlere ve DAG grafiğine bölerim,\n"
+                    "- 👷 **Worker ajanıyla** dosyaları ve testleri kodlarım,\n"
+                    "- 🧪 **Test Engine ile** nesnel testleri (`pytest`) çalıştırırım,\n"
+                    "- 🕵️ **Reviewer ajanıyla** güvenlik ve mimari denetimi yapıp Git'e commit ederim!\n\n"
+                    "Şimdi ne geliştirmemi istersin kanka?"
                 )
-
                 bot_entry = {
                     "id": f"msg-{len(history)+1}",
                     "sender": "ramazan",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "text": resp_text,
                     "actions": [
-                        {"label": "🚨 Oyunu Canlı Oyna (Play)", "gameUrl": "/game/cops", "gameTitle": "🚨 Hırsız Polis Kovalamaca"},
-                        {"label": "📄 Kodları İncele (HTML/JS)", "file": "cops_robbers_game.html"},
+                        {"label": "🚀 Hesap Makinesi Servisi Planla", "prompt": "Python ile 4 işlem ve hafıza yönetimi yapan bir Hesap Makinesi modülü tasarla"},
+                        {"label": "🧪 Testleri Çalıştır", "prompt": "testleri çalıştır"},
                         {"label": "📋 Görevler Sekmesine Geç", "tab": "tasks"}
                     ]
                 }
 
-            # 2. Maymun Oyunu (Monkey Game)
-            elif any(w in msg_lower for w in ["maymun", "monkey", "zıplayan"]):
-                task = Task(
-                    id="TASK-004",
-                    title="Zıplayan Maymun Mobil Oyunu (Single-File HTML & JS)",
-                    description="HTML5 Canvas tabanlı, dokunmatik kontrollü, muz toplamalı ve fizik motorlu tek dosya zıplayan maymun oyunu.",
-                    type="implementation",
-                    priority="high",
-                    complexity="medium",
-                    dependencies=[],
-                    files=["monkey_game.html", "tests/test_monkey_game.py"],
-                    acceptanceCriteria=[
-                        "Tek dosya HTML5 Canvas ve responsive mobil viewport",
-                        "Fizik motoru: Yerçekimi, platform sıçraması, zıplama gücü",
-                        "Dokunmatik butonlar (◀ ▶) ve ekran dokunma kontrolleri",
-                        "Muz toplama ve puan sayacı mekanizması",
-                        "Birim testleri ve nesnel test motoru doğrulaması"
-                    ]
-                )
-                orch.task_engine.add_task(task)
-                orch.state_manager.start_task(task.id)
-
-                # Test execution
-                test_res = orch.test_engine.run_tests(command="pytest tests/test_monkey_game.py -v")
-                task.testStatus = "PASSED" if test_res.passed else "FAILED"
-                task.reviewStatus = "APPROVED"
-                orch.task_engine.save_task(task)
-
-                # Git commit
-                commit_hash = orch.git_manager.commit_task(
-                    task_id=task.id,
-                    title=task.title,
-                    task_type=task.type,
-                    files=["monkey_game.html", "tests/test_monkey_game.py"]
-                ) or "commit_ok"
-
-                # Create Task Memory
-                mem = TaskMemory(
-                    taskId=task.id,
-                    completed="Zıplayan Maymun oyunu tek dosya HTML/JS olarak kodlandı ve test edildi.",
-                    filesChanged=["monkey_game.html", "tests/test_monkey_game.py"],
-                    importantDecisions=["Canvas 2D context ile saf JavaScript fizik motoru kullanıldı."],
-                    problems=[],
-                    resolution="Tüm dokunmatik kontroller ve testler doğrulandı.",
-                    tests=f"Birim testleri başarıyla geçti (Süre: {test_res.duration}s).",
-                    futureConsiderations="Yeni ses efektleri ve seviyeler eklenebilir."
-                )
-                mem_file = proj_root / ".ramazan" / "memory" / f"{task.id}.md"
-                mem_file.parent.mkdir(parents=True, exist_ok=True)
-                mem_file.write_text(mem.to_markdown(), encoding="utf-8")
-
-                orch.task_engine.update_task_status(task.id, "COMPLETED")
-                orch.state_manager.complete_task(task.id)
-
+            # 2. API Key ve Ücretsizlik Soruları
+            elif any(w in msg_lower for w in ["api key", "apikey", "anahtar", "şart mı", "gerekli mi", "ücretsiz", "bedava"]):
                 resp_text = (
-                    f"🐒 **Zıplayan Maymun Oyunu Başarıyla Kodlandı ve Doğrulandı!**\n\n"
-                    f"Tüm orkestrasyon akışı uçtan uca tamamlandı:\n\n"
-                    f"👷 **Worker Ajanı:**\n"
-                    f"- `monkey_game.html` (340 satır HTML5 Canvas, yerçekimi, muzlar ve dokunmatik kontroller)\n"
-                    f"- `tests/test_monkey_game.py` (Mobil uyumluluk ve fizik doğrulama testleri)\n\n"
-                    f"🧪 **Test Engine (Gerçek pytest Çıktısı):**\n"
-                    f"- Durum: {'✅ **TÜM TESTLER GEÇTİ (PASSED)**' if test_res.passed else '❌ TESTLER BAŞARISIZ'}\n"
-                    f"- Süre: `{test_res.duration}s` | Exit Code: `{test_res.exitCode}`\n\n"
-                    f"🕵️ **Reviewer Ajanı:**\n"
-                    f"- Sonuç: `APPROVED` ✅ (Sıfır güvenlik açığı, mobil responsive yapı onaylandı)\n\n"
-                    f"💾 **Git Otomasyonu:**\n"
-                    f"- Commit: `feat: [TASK-004] Zıplayan Maymun Mobil Oyunu` (`{commit_hash[:7]}`)\n\n"
-                    f"Aşağıdaki **'🎮 Oyunu Hemen Oyna'** butonuna basarak oyunu doğrudan telefonunda tam ekran oynayabilirsin kanka!"
+                    "🔑 **API Anahtarı Durumu:**\n\n"
+                    "RAMAZAN AI iki farklı modda çalışabilir:\n\n"
+                    "1. **Çevrimdışı / Simülasyon Modu:**\n"
+                    "   - API anahtarına hiç gerek yoktur.\n"
+                    "   - Deterministik mock motoru ile görev planlama, test motoru, kod denetleme ve tüm kontrol paneli %100 yerel ve ücretsiz çalışır.\n\n"
+                    "2. **Canlı LLM Modu:**\n"
+                    "   - Gemini, Claude veya OpenAI anahtarını eklediğinde tüm görevleri canlı yapay zeka ajanları yazar ve inceler.\n"
+                    "   - Terminalden `ramazan configure --key <API_KEY>` ile veya Ayarlar sekmesinden kolayca tanımlayabilirsin."
                 )
-
                 bot_entry = {
                     "id": f"msg-{len(history)+1}",
                     "sender": "ramazan",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "text": resp_text,
                     "actions": [
-                        {"label": "🎮 Oyunu Canlı Oyna (Play)", "gameUrl": "/game", "gameTitle": "🐒 Zıplayan Maymun"},
-                        {"label": "📄 Kodları İncele (HTML/JS)", "file": "monkey_game.html"},
-                        {"label": "📋 Görevler Sekmesine Geç", "tab": "tasks"}
+                        {"label": "🧪 Testleri Çalıştır", "prompt": "testleri çalıştır"},
+                        {"label": "📋 Görevleri Gör", "tab": "tasks"}
                     ]
                 }
 
-            # 3. Genel Oyun Talebi
-            elif any(w in msg_lower for w in ["oyun"]):
+            # 3. Kimsin / Yardım
+            elif any(w in msg_lower for w in ["kimsin", "yardım", "help", "ne yapabilirsin", "neler yapabilirsin"]):
                 resp_text = (
-                    f"🎮 **Hangi Oyunu Oynamak veya Geliştirmek İstersin Kanka?**\n\n"
-                    f"Mobil ortam için tek dosya HTML/JS olarak hazırlanmış oyunlarımız:\n\n"
-                    f"1. 🚨 **Hırsız Polis Kovalamaca:** Dokunmatik D-Pad, Nitro Boost, Polis AI takip mekanizması, elmas ganimetleri, aranma yıldızları ve dinamik siren sesleri.\n"
-                    f"2. 🐒 **Zıplayan Maymun:** Dikey zıplama fizik motoru, muz toplama ve platform sıçraması.\n\n"
-                    f"Aşağıdaki butonlardan dilediğini seçip hemen canlı oynayabilirsin!"
+                    "🤖 **RAMAZAN AI Nedir?**\n\n"
+                    "RAMAZAN AI, tek bir sohbet botundan ibaret değildir; çoklu ajan mimarisine sahip bir **Chief Software Engineering Orchestrator** sistemidir:\n\n"
+                    "- 🧠 **Orchestrator:** Gereksinimleri küçük, atomik görevlere ve DAG grafiğine böler.\n"
+                    "- 🏛️ **Architect:** Sistem mimarisi ve değişmez ADR kararlarını yönetir.\n"
+                    "- 👷 **Worker:** Belirlenen dosyalarda kod ve birim testlerini yazar.\n"
+                    "- 🧪 **Test Engine:** Kodu nesnel test motorunda (`pytest`) doğrular.\n"
+                    "- 🕵️ **Reviewer:** Güvenlik ve kalite denetimi yapar.\n"
+                    "- 🛡️ **Circuit Breaker:** Sonsuz döngüleri ve güvenlik açıklarını engeller."
                 )
                 bot_entry = {
                     "id": f"msg-{len(history)+1}",
@@ -334,9 +199,8 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "text": resp_text,
                     "actions": [
-                        {"label": "🚨 Hırsız Polis Oyna", "gameUrl": "/game/cops", "gameTitle": "🚨 Hırsız Polis Kovalamaca"},
-                        {"label": "🐒 Maymun Oyunu Oyna", "gameUrl": "/game", "gameTitle": "🐒 Zıplayan Maymun"},
-                        {"label": "📋 Görevler Sekmesine Geç", "tab": "tasks"}
+                        {"label": "📋 Görevleri İncele", "tab": "tasks"},
+                        {"label": "🧪 Testleri Çalıştır", "prompt": "testleri çalıştır"}
                     ]
                 }
 
@@ -380,7 +244,7 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
                     "actions": [{"label": "▶️ Sonraki Adım", "action": "step"}, {"label": "📋 Görevler", "tab": "tasks"}]
                 }
 
-            # 6. Genel Yazılım Talebi / Mimari Planlama
+            # 9. Genel Yazılım Talebi / Mimari Planlama
             else:
                 req_file = proj_root / ".ramazan" / "requirements.md"
                 req_file.parent.mkdir(parents=True, exist_ok=True)
@@ -396,6 +260,28 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
                     cost_tracker=orch.cost_tracker
                 )
                 planned = orch_agent.plan_project(req_content, arch)
+
+                # Avoid overwriting existing tasks by remapping IDs if needed
+                existing_tasks = orch.task_engine.get_all_tasks()
+                existing_ids = {t.id for t in existing_tasks}
+                conflict = any(t.id in existing_ids for t in planned)
+                if conflict:
+                    max_num = 0
+                    for t in existing_tasks:
+                        try:
+                            num = int(t.id.replace("TASK-", ""))
+                            if num > max_num:
+                                max_num = num
+                        except Exception:
+                            pass
+                    id_map = {}
+                    for idx, t in enumerate(planned):
+                        new_id = f"TASK-{max_num + idx + 1:03d}"
+                        id_map[t.id] = new_id
+
+                    for t in planned:
+                        t.id = id_map[t.id]
+                        t.dependencies = [id_map.get(dep, dep) for dep in t.dependencies]
 
                 # Add tasks to engine
                 for t in planned:
@@ -1181,6 +1067,20 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
       }
     }
 
+    function formatMessageText(txt) {
+      if (!txt) return '';
+      let s = txt
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
+        .replace(/\\*(.*?)\\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.14);padding:0.15rem 0.35rem;border-radius:4px;font-size:0.86em;font-family:monospace;">$1</code>')
+        .replace(/\\n/g, '<br>')
+        .replace(/\n/g, '<br>');
+      return s;
+    }
+
     function renderChatMessages(messages) {
       const box = document.getElementById('chat-messages');
       box.innerHTML = '';
@@ -1188,7 +1088,7 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
         const bubble = document.createElement('div');
         bubble.className = `chat-bubble ${m.sender}`;
         
-        let html = `<div>${m.text.replace(/\\n/g, '<br>')}</div>`;
+        let html = `<div>${formatMessageText(m.text)}</div>`;
         if (m.actions && m.actions.length > 0) {
           html += `<div class="bubble-actions">`;
           m.actions.forEach(a => {

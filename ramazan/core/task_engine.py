@@ -64,6 +64,10 @@ class TaskEngine:
                 logger.error(f"Error loading {f.name}: {e}")
         return self.tasks
 
+    def get_all_tasks(self) -> List[Task]:
+        """Return a list of all loaded tasks."""
+        return list(self.load_tasks().values())
+
     def save_task(self, task: Task) -> Path:
         self.tasks[task.id] = task
         file_path = self.tasks_dir / f"{task.id}.json"

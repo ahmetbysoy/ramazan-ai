@@ -427,6 +427,7 @@ def cmd_adr_list():
 
 @app.command()
 def plan(
+    prompt: Optional[str] = Argument(None, help="Inline requirement or project description to plan"),
     req_file: Optional[Path] = Option(None, "--file", "-f", help="Path to requirements file"),
     use_mock: bool = Option(False, "--mock", help="Use deterministic mock model for offline planning"),
 ):
@@ -438,8 +439,11 @@ def plan(
     orchestrator = Orchestrator(root_dir, config, use_mock_llm=use_mock)
 
     req_path = req_file or (root_dir / ".ramazan" / "requirements.md")
-    if not req_path.exists():
-        console.print(f"[red]Requirements file not found at {req_path}[/red]")
+    if prompt:
+        req_path.parent.mkdir(parents=True, exist_ok=True)
+        req_path.write_text(f"# Proje Gereksinimleri\n\n## Kullanıcı Talebi\n{prompt}\n", encoding="utf-8")
+    elif not req_path.exists():
+        console.print(f"[red]Requirements file not found at {req_path}. Provide an inline prompt: ramazan plan 'proje talebi'[/red]")
         raise Exit(1)
 
     requirements = req_path.read_text(encoding="utf-8")
@@ -464,6 +468,65 @@ def plan(
     console.print(f"[bold green]Successfully generated {len(planned_tasks)} deterministic tasks![/bold green]")
     for t in planned_tasks:
         console.print(f"- [cyan]{t.id}[/cyan]: {t.title} [dim]({t.complexity} complexity)[/dim]")
+
+
+@app.command(name="start")
+def start_project(
+    prompt: str = Argument(..., help="Feature or project description to plan and build autonomously"),
+    mock: bool = Option(False, "--mock", help="Run with deterministic simulation for development/testing"),
+):
+    """
+    All-in-one command: Plan and execute a software engineering project end-to-end.
+    """
+    root_dir = find_project_root()
+    config = RamazanConfig.load(root_dir)
+    orchestrator = Orchestrator(root_dir, config, use_mock_llm=mock)
+
+    req_path = root_dir / ".ramazan" / "requirements.md"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text(f"# Proje Gereksinimleri\n\n## Kullanıcı Talebi\n{prompt}\n", encoding="utf-8")
+
+    requirements = req_path.read_text(encoding="utf-8")
+    arch = orchestrator.context_builder.load_architecture_rules()
+
+    console.print(f"[bold cyan]RAMAZAN AI - Starting Autonomous Engineering for:[/bold cyan] {prompt}")
+    console.print("[cyan]1. Orchestrator Agent planning DAG task graph...[/cyan]")
+
+    from ramazan.agents.orchestrator_agent import OrchestratorAgent
+    orch_agent = OrchestratorAgent(
+        model_config=orchestrator.router.get_orchestrator_model(),
+        llm_client=orchestrator.llm_client,
+        cost_tracker=orchestrator.cost_tracker
+    )
+
+    planned_tasks = orch_agent.plan_project(requirements, arch)
+
+    for t in planned_tasks:
+        orchestrator.task_engine.add_task(t)
+
+    orchestrator.state_manager.recompute(orchestrator.task_engine)
+
+    console.print(f"[green]Planned {len(planned_tasks)} atomic tasks. Executing autonomous pipeline...[/green]")
+    result = orchestrator.run_all()
+
+    if result.success:
+        console.print(Panel(
+            f"[bold green]PROJECT COMPLETED SUCCESSFULLY![/bold green]\n\n"
+            f"{result.message}\n"
+            f"Tasks Completed: {len(result.state.completedTasks)}/{result.state.totalTasks}\n"
+            f"Total Cost: ${orchestrator.cost_tracker.total_cost_usd:.4f}",
+            title="RAMAZAN AI - SUCCESS",
+            border_style="green"
+        ))
+    else:
+        console.print(Panel(
+            f"[bold red]PROJECT EXECUTION STOPPED / BLOCKED[/bold red]\n\n"
+            f"{result.message}\n"
+            f"State: {result.state.status}",
+            title="RAMAZAN AI - BLOCKED",
+            border_style="red"
+        ))
+        raise Exit(1)
 
 
 @app.command()

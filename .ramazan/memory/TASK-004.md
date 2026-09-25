@@ -1,24 +1,23 @@
 # Task Memory: TASK-004
 
 ## Title
-Zıplayan Maymun Mobil Oyunu (Single-File HTML & JS)
+System Health and Telemetry Diagnostics
 
 ## Completed
-Zıplayan Maymun oyunu tek dosya HTML/JS olarak kodlandı ve mobil viewport ile dokunmatik kontroller doğrulandı.
+System health diagnostics and telemetry verification endpoints implemented and tested.
 
 ## Files Changed
-- `monkey_game.html`
-- `tests/test_monkey_game.py`
+- `src/domain/controller.py`
+- `tests/test_domain_controller.py`
 
 ## Important Decisions
-- Canvas 2D context ile saf JavaScript fizik motoru ve dokunmatik D-Pad kontrolleri kullanıldı.
-- Sıfır harici bağımlılık ile tek dosya HTML/JS olarak mimarilendirildi.
+- Integrated system health check with version telemetry.
 
 ## Problems Encountered
-- İlk oluşturmada task JSON dosyası kaydedilmeden commit edilmiş, TASK-005 üretildiğinde ID sırası atlanarak state tutarsızlığına yol açmıştı.
+- None.
 
 ## Resolution
-- TASK-004 deterministik olarak TaskStore ve Memory altına kaydedildi, state recompute edilerek senkronize edildi.
+- Validated via objective pytest test execution.
 
 ## Tests
-- `tests/test_monkey_game.py` başarıyla geçti (100% assertions).
+- `tests/test_domain_controller.py` passed with 100% assertions.

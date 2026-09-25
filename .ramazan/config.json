@@ -14,40 +14,40 @@
   },
   "models": {
     "orchestrator": {
-      "model": "claude-3-5-sonnet-latest",
-      "provider": "anthropic",
+      "model": "gemini-flash-latest",
+      "provider": "gemini",
       "temperature": 0.2
     },
     "architect": {
-      "model": "claude-3-5-sonnet-latest",
-      "provider": "anthropic",
+      "model": "gemini-flash-latest",
+      "provider": "gemini",
       "temperature": 0.2
     },
     "worker": {
       "low": {
-        "model": "gpt-4o-mini",
-        "provider": "openai",
+        "model": "gemini-flash-latest",
+        "provider": "gemini",
         "temperature": 0.2
       },
       "medium": {
-        "model": "claude-3-5-haiku-latest",
-        "provider": "anthropic",
+        "model": "gemini-flash-latest",
+        "provider": "gemini",
         "temperature": 0.2
       },
       "high": {
-        "model": "claude-3-5-sonnet-latest",
-        "provider": "anthropic",
+        "model": "gemini-flash-latest",
+        "provider": "gemini",
         "temperature": 0.2
       },
       "critical": {
-        "model": "gpt-4o",
-        "provider": "openai",
+        "model": "gemini-flash-latest",
+        "provider": "gemini",
         "temperature": 0.1
       }
     },
     "reviewer": {
-      "model": "claude-3-5-sonnet-latest",
-      "provider": "anthropic",
+      "model": "gemini-flash-latest",
+      "provider": "gemini",
       "temperature": 0.1
     }
   },
