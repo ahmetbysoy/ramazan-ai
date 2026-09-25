@@ -91,15 +91,21 @@ class FinalAuditor:
             details="Architecture document present and intact." if arch_exists else "Missing .ramazan/architecture.md"
         ))
 
-        # 4. Git Repository Status
+        # 4. Git Repository Status (verify source files are committed)
         status_clean = True
         status_details = "Clean or skipped."
         repo = self.git_manager.get_repo()
         if repo:
             try:
-                dirty = repo.is_dirty(untracked_files=False)
-                status_clean = not dirty
-                status_details = "Working tree clean." if not dirty else "Uncommitted modified files exist in working tree."
+                # Check for uncommitted source changes outside of .ramazan runtime files
+                dirty_diffs = repo.index.diff(None)
+                uncommitted_src = [d.a_path for d in dirty_diffs if not d.a_path.startswith(".ramazan/")]
+                status_clean = len(uncommitted_src) == 0
+                status_details = (
+                    "Working tree clean."
+                    if status_clean
+                    else f"Uncommitted source files: {', '.join(uncommitted_src)}"
+                )
             except Exception as e:
                 status_details = f"Git check warning: {e}"
 

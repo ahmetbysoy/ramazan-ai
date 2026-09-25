@@ -42,5 +42,7 @@ tests/.cache/
 *.swo
 .DS_Store
 
-# RAMAZAN AI logs (keep state & tasks, ignore runtime logs)
-.ramazan/logs/*.log
+# RAMAZAN AI logs & test run outputs (keep tasks/state, ignore runtime artifacts)
+.ramazan/logs/
+.ramazan/tests/
+.ramazan/FINAL_AUDIT.md
