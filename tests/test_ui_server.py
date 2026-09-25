@@ -1,5 +1,5 @@
 import pytest
-
+import shutil
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from pathlib import Path
@@ -7,6 +7,18 @@ from ramazan.ui.server import create_app
 
 
 def test_ui_endpoints(tmp_path: Path):
+    # Copy games and tests to tmp_path for test isolation
+    for fname in ["monkey_game.html", "cops_robbers_game.html"]:
+        src = Path(fname)
+        if src.exists():
+            shutil.copy(src, tmp_path / fname)
+
+    (tmp_path / "tests").mkdir(parents=True, exist_ok=True)
+    for tname in ["test_monkey_game.py", "test_cops_game.py"]:
+        src = Path("tests") / tname
+        if src.exists():
+            shutil.copy(src, tmp_path / "tests" / tname)
+
     app = create_app(root_dir=tmp_path)
     client = TestClient(app)
 
@@ -45,3 +57,25 @@ def test_ui_endpoints(tmp_path: Path):
     cfg_data = res_cfg.json()
     assert cfg_data["success"] is True
     assert cfg_data["detected"]["provider"] == "gemini"
+
+    # 7. Games endpoints
+    res_mg = client.get("/game")
+    assert res_mg.status_code == 200
+    assert "Zıplayan Maymun" in res_mg.text
+
+    res_cg = client.get("/game/cops")
+    assert res_cg.status_code == 200
+    assert "Hırsız Polis" in res_cg.text
+
+    # 8. Chat API POST for Cops & Robbers game
+    res_cops_chat = client.post("/api/chat", json={"message": "kanka hırsız polis oyunu yap . mobil tasarım olsun. tek dosya html JavaScript olarak kodla"})
+    assert res_cops_chat.status_code == 200
+    cops_resp = res_cops_chat.json()
+    assert "response" in cops_resp
+    assert "Hırsız Polis Mobil Oyunu" in cops_resp["response"]["text"]
+    assert any(a.get("gameUrl") == "/game/cops" for a in cops_resp["response"].get("actions", []))
+
+    # 9. Preview endpoint
+    res_prev = client.get("/preview/cops_robbers_game.html")
+    assert res_prev.status_code == 200
+    assert "Hırsız Polis" in res_prev.text
