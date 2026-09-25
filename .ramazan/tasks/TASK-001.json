@@ -1,0 +1,26 @@
+{
+  "id": "TASK-001",
+  "title": "Core Domain Models and Schema Validation",
+  "description": "Implement baseline domain data structures and input validation logic.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "low",
+  "status": "APPROVED",
+  "dependencies": [],
+  "files": [
+    "src/domain/models.py"
+  ],
+  "acceptanceCriteria": [
+    "Domain model defined with attributes.",
+    "Validation methods implemented.",
+    "Unit tests verify valid and invalid inputs."
+  ],
+  "assignedAgent": "Worker",
+  "assignedModel": "gpt-4o-mini",
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": "All tests passed successfully.",
+  "reviewFeedback": "Code satisfies acceptance criteria, passes automated tests, and adheres to architecture."
+}
