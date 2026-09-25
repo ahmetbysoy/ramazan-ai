@@ -1,15 +1,22 @@
 """
-FastAPI Server and Web UI Dashboard for RAMAZAN AI.
-Provides modern responsive interface and REST API for orchestration control.
+FastAPI Server and Mobile-First Web Dashboard for RAMAZAN AI.
+Designed for mobile phones (Termux) and modern browsers.
+Features:
+- Bottom Navigation Toolbar
+- Interactive Chat Tab for natural language requirements & orchestration
+- Visual Pipeline / Tasks Tab with 1-tap Step and Run controls
+- Smart API Key Auto-Detection Tab
+- Real-time Test & Audit Tab
 """
 
 import json
 import os
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
 
 from ramazan.config import RamazanConfig, find_project_root
 from ramazan.core.orchestrator import Orchestrator
@@ -22,7 +29,38 @@ from ramazan.audit.final_audit import FinalAuditor
 
 def create_app(root_dir: Optional[Path] = None) -> FastAPI:
     proj_root = (root_dir or find_project_root()).resolve()
-    app = FastAPI(title="RAMAZAN AI Dashboard", version="1.0.0")
+    app = FastAPI(title="RAMAZAN AI Mobile Dashboard", version="2.0.0")
+
+    def _get_chat_history_path() -> Path:
+        chat_dir = proj_root / ".ramazan"
+        chat_dir.mkdir(parents=True, exist_ok=True)
+        return chat_dir / "chat_history.json"
+
+    def _load_chat_history() -> List[dict]:
+        path = _get_chat_history_path()
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        # Default welcome message
+        return [
+            {
+                "id": "msg-1",
+                "sender": "ramazan",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "text": "Selam kanka! Ben **RAMAZAN AI**, senin otonom yazılım mühendisliği orkestratörünüm. 🚀\n\nNeye ihtiyacın var? Aklındaki yazılım projesini veya eklemek istediğin bir özelliği buraya yaz; mimarisini çıkarıp görevlere böleyim, kodlarını yazıp test edelim!",
+                "actions": [
+                    {"label": "🚀 REST API & CRUD Projesi", "prompt": "FastAPI ile kullanıcı ve ürün yönetimi yapan bir REST API servisi tasarla"},
+                    {"label": "🔐 JWT Auth Sistemi", "prompt": "Güvenli JWT tabanlı kullanıcı kayıt ve giriş mekanizması uygula"},
+                    {"label": "🧪 Testleri Koş", "prompt": "Mevcut sistemin tüm testlerini çalıştır ve doğrula"}
+                ]
+            }
+        ]
+
+    def _save_chat_history(messages: List[dict]):
+        path = _get_chat_history_path()
+        path.write_text(json.dumps(messages, indent=2, ensure_ascii=False), encoding="utf-8")
 
     @app.get("/api/status")
     def get_status():
@@ -54,14 +92,125 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
             "auditSummary": audit_summary,
         }
 
+    @app.get("/api/chat")
+    def get_chat():
+        return {"messages": _load_chat_history()}
+
+    @app.post("/api/chat")
+    def post_chat(payload: dict = Body(...)):
+        user_message = payload.get("message", "").strip()
+        if not user_message:
+            raise HTTPException(status_code=400, detail="Mesaj boş olamaz.")
+
+        history = _load_chat_history()
+
+        # Add user message
+        user_entry = {
+            "id": f"msg-{len(history)+1}",
+            "sender": "user",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "text": user_message
+        }
+        history.append(user_entry)
+
+        config = RamazanConfig.load(proj_root)
+        orch = Orchestrator(proj_root, config)
+
+        msg_lower = user_message.lower()
+
+        # Command detection
+        if any(w in msg_lower for w in ["testleri çalıştır", "test et", "test koş"]):
+            test_res = orch.test_engine.run_tests()
+            resp_text = (
+                f"🧪 **Test Motoru Sonucu:**\n\n"
+                f"- Durum: {'✅ **BAŞARILI (PASSED)**' if test_res.passed else '❌ **BAŞARISIZ (FAILED)**'}\n"
+                f"- Çıkış Kodu: `{test_res.exitCode}`\n"
+                f"- Süre: `{test_res.duration}s`\n"
+                f"- Özet: {test_res.summary}"
+            )
+            bot_entry = {
+                "id": f"msg-{len(history)+1}",
+                "sender": "ramazan",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "text": resp_text,
+                "actions": [{"label": "📋 Görevleri Gör", "tab": "tasks"}]
+            }
+        elif any(w in msg_lower for w in ["çalıştır", "yürüt", "adım at", "başlat"]) and "tüm" not in msg_lower:
+            task = orch.run_next_task()
+            if task:
+                resp_text = (
+                    f"▶️ **Sıradaki Görev Yürütüldü!**\n\n"
+                    f"- **Görev:** `{task.id}`: {task.title}\n"
+                    f"- **Durum:** `{task.status}`\n"
+                    f"- **Test Durumu:** `{task.testStatus}`\n"
+                    f"- **İnceleme:** `{task.reviewStatus}`\n\n"
+                    f"Görev hafızası ve Git commit'i oluşturuldu. Bir sonraki göreve geçmeye hazırız!"
+                )
+            else:
+                resp_text = "Şu anda çalıştırılmaya hazır bekleyen yeni bir görev bulunmuyor. Yeni bir özellik isteyebilirsin kanka!"
+            bot_entry = {
+                "id": f"msg-{len(history)+1}",
+                "sender": "ramazan",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "text": resp_text,
+                "actions": [{"label": "▶️ Sonraki Adım", "action": "step"}, {"label": "📋 Görevler", "tab": "tasks"}]
+            }
+        else:
+            # Software requirement planning!
+            # Save into requirements.md
+            req_file = proj_root / ".ramazan" / "requirements.md"
+            req_content = f"# Proje Gereksinimleri\n\n## Kullanıcı Talebi\n{user_message}\n\n## Tarih\n{datetime.now(timezone.utc).isoformat()}\n"
+            req_file.write_text(req_content, encoding="utf-8")
+
+            arch = orch.context_builder.load_architecture_rules()
+
+            from ramazan.agents.orchestrator_agent import OrchestratorAgent
+            orch_agent = OrchestratorAgent(
+                model_config=orch.router.get_orchestrator_model(),
+                llm_client=orch.llm_client,
+                cost_tracker=orch.cost_tracker
+            )
+            planned = orch_agent.plan_project(req_content, arch)
+
+            # Add tasks to engine
+            for t in planned:
+                orch.task_engine.add_task(t)
+
+            orch.state_manager.set_total_tasks(len(orch.task_engine.tasks))
+
+            task_bullets = "\n".join([f"- **`{t.id}`**: {t.title} *(Öncelik: {t.priority.upper()}, Karmaşıklık: {t.complexity.upper()})*" for t in planned])
+
+            resp_text = (
+                f"Harika fikir kanka! Talebini analiz ettim ve deterministik bir görev grafiği oluşturdum: 🎯\n\n"
+                f"**Planlanan Görevler ({len(planned)} adet):**\n"
+                f"{task_bullets}\n\n"
+                f"Pipeline kuruldu! İster aşağıdaki butondan **ilk görevi adım adım başlat**, istersen **Görevler** sekmesine geçip tüm planı incele."
+            )
+
+            bot_entry = {
+                "id": f"msg-{len(history)+1}",
+                "sender": "ramazan",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "text": resp_text,
+                "actions": [
+                    {"label": "▶️ İlk Görevi Başlat (Step)", "action": "step"},
+                    {"label": "⚡ Hepsini Otonom Yap (Run)", "action": "run"},
+                    {"label": "📋 Görevler Sekmesine Geç", "tab": "tasks"}
+                ]
+            }
+
+        history.append(bot_entry)
+        _save_chat_history(history)
+        return {"response": bot_entry, "messages": history}
+
     @app.post("/api/step")
     def execute_step():
         config = RamazanConfig.load(proj_root)
         orch = Orchestrator(proj_root, config)
         task = orch.run_next_task()
         if not task:
-            return {"success": False, "message": "No ready tasks available."}
-        return {"success": True, "task": task.model_dump()}
+            return {"success": False, "message": "Çalıştırılmaya hazır görev kalmadı."}
+        return {"success": True, "task": task.model_dump(), "message": f"{task.id} başarıyla yürütüldü: {task.status}"}
 
     @app.post("/api/run")
     def execute_run(max_steps: int = 20):
@@ -80,7 +229,7 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
         orch = Orchestrator(proj_root, config)
         req_file = proj_root / ".ramazan" / "requirements.md"
         if not req_file.exists():
-            raise HTTPException(status_code=400, detail="requirements.md not found.")
+            raise HTTPException(status_code=400, detail="requirements.md dosyası bulunamadı.")
 
         requirements = req_file.read_text(encoding="utf-8")
         arch = orch.context_builder.load_architecture_rules()
@@ -152,13 +301,11 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
         task_eng = TaskEngine(proj_root)
         task = task_eng.get_task(task_id)
         if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
+            raise HTTPException(status_code=404, detail="Görev bulunamadı.")
 
-        # Memory
         mem_file = proj_root / ".ramazan" / "memory" / f"{task_id}.md"
         mem = mem_file.read_text(encoding="utf-8") if mem_file.exists() else None
 
-        # Review
         rev_file = proj_root / ".ramazan" / "reviews" / f"{task_id}.md"
         rev = rev_file.read_text(encoding="utf-8") if rev_file.exists() else None
 
@@ -173,7 +320,6 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
         arch_file = proj_root / ".ramazan" / "architecture.md"
         arch_content = arch_file.read_text(encoding="utf-8") if arch_file.exists() else ""
 
-        # Collect ADRs
         decisions_dir = proj_root / ".ramazan" / "decisions"
         adrs = []
         if decisions_dir.exists():
@@ -190,754 +336,780 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index():
-        return HTML_DASHBOARD
+        return MOBILE_HTML_DASHBOARD
 
     return app
 
 
-HTML_DASHBOARD = """<!DOCTYPE html>
+MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RAMAZAN AI - Multi-Agent Software Engineering Orchestrator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>RAMAZAN AI Mobile</title>
   <style>
     :root {
-      --bg-main: #0b0f19;
-      --bg-card: #131b2e;
-      --bg-card-hover: #18223a;
-      --border: #23314e;
-      --border-focus: #3b82f6;
-      --text: #f1f5f9;
-      --text-muted: #94a3b8;
+      --bg: #090d16;
+      --card-bg: #121826;
+      --card-border: #1f293d;
+      --card-hover: #1a2337;
+      --text: #f8fafc;
+      --muted: #94a3b8;
       --primary: #3b82f6;
       --primary-hover: #2563eb;
       --emerald: #10b981;
-      --emerald-bg: rgba(16, 185, 129, 0.12);
+      --emerald-bg: rgba(16, 185, 129, 0.15);
       --amber: #f59e0b;
-      --amber-bg: rgba(245, 158, 11, 0.12);
       --rose: #f43f5e;
-      --rose-bg: rgba(244, 63, 94, 0.12);
       --cyan: #06b6d4;
-      --purple: #a855f7;
+      --bottom-nav-height: 64px;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background: var(--bg-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
       color: var(--text);
-      line-height: 1.5;
-      min-height: 100vh;
       display: flex;
       flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
     }
-    header {
-      background: rgba(19, 27, 46, 0.85);
-      backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      padding: 0.85rem 1.5rem;
+
+    /* Top App Bar */
+    .app-header {
+      background: rgba(18, 24, 38, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 0.75rem 1rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 1rem;
+      flex-shrink: 0;
+      z-index: 40;
     }
-    .brand {
+    .header-brand {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.6rem;
     }
-    .logo-badge {
+    .header-logo {
       background: linear-gradient(135deg, #3b82f6, #10b981);
-      color: #fff;
-      font-weight: 900;
-      font-size: 1.15rem;
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+      font-weight: 900;
+      font-size: 1rem;
+      color: #fff;
     }
-    .brand h1 {
-      font-size: 1.25rem;
+    .header-title {
+      font-size: 1.05rem;
       font-weight: 800;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.01em;
     }
-    .brand span {
-      color: var(--cyan);
-      font-size: 0.8rem;
-      font-weight: 600;
-      background: rgba(6, 182, 212, 0.12);
-      padding: 2px 8px;
+    .status-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.25rem 0.55rem;
       border-radius: 9999px;
-      margin-left: 0.5rem;
+      background: var(--emerald-bg);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      text-transform: uppercase;
     }
-    .header-actions {
+
+    /* Main Content Container */
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding-bottom: calc(var(--bottom-nav-height) + 1rem);
+      -webkit-overflow-scrolling: touch;
+    }
+    .tab-pane {
+      display: none;
+      padding: 1rem;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+    .tab-pane.active {
       display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
+      flex-direction: column;
+      gap: 1rem;
     }
+
+    /* Card */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 1rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+
+    /* Buttons */
     .btn {
       appearance: none;
-      border: 1px solid transparent;
-      padding: 0.5rem 0.9rem;
-      border-radius: 8px;
-      font-size: 0.85rem;
+      border: none;
+      border-radius: 10px;
+      padding: 0.65rem 1rem;
+      font-size: 0.88rem;
       font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 0.4rem;
-      transition: all 0.18s ease;
+      transition: all 0.15s ease;
       color: #fff;
     }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: var(--primary); }
-    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-primary:active { background: var(--primary-hover); transform: scale(0.98); }
     .btn-emerald { background: var(--emerald); }
-    .btn-emerald:hover:not(:disabled) { filter: brightness(1.1); }
+    .btn-emerald:active { filter: brightness(1.1); transform: scale(0.98); }
     .btn-outline {
       background: transparent;
-      border-color: var(--border);
+      border: 1px solid var(--card-border);
       color: var(--text);
     }
-    .btn-outline:hover:not(:disabled) {
-      background: var(--bg-card);
-      border-color: var(--text-muted);
-    }
-    .btn-sm { padding: 0.35rem 0.65rem; font-size: 0.78rem; }
+    .btn-block { width: 100%; }
 
-    main {
-      flex: 1;
-      padding: 1.5rem;
-      max-width: 1400px;
+    /* TAB 1: Chat Styles */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100dvh - 54px - var(--bottom-nav-height));
+      max-width: 650px;
       margin: 0 auto;
       width: 100%;
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
+      gap: 0.85rem;
     }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 1rem;
+    .chat-bubble {
+      max-width: 86%;
+      padding: 0.8rem 1rem;
+      border-radius: 16px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      word-break: break-word;
     }
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.2rem;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    .chat-bubble.ramazan {
+      align-self: flex-start;
+      background: #151f33;
+      border: 1px solid var(--card-border);
+      border-bottom-left-radius: 4px;
     }
-    .stat-label {
-      color: var(--text-muted);
-      font-size: 0.78rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 0.4rem;
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: var(--primary);
+      color: #fff;
+      border-bottom-right-radius: 4px;
     }
-    .stat-value {
-      font-size: 1.5rem;
-      font-weight: 800;
+    .bubble-actions {
       display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .progress-bar-bg {
-      background: rgba(255, 255, 255, 0.08);
-      height: 8px;
-      border-radius: 9999px;
-      overflow: hidden;
+      gap: 0.4rem;
+      flex-wrap: wrap;
       margin-top: 0.6rem;
     }
-    .progress-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #3b82f6, #10b981);
-      transition: width 0.4s ease;
-      width: 0%;
-    }
-    .badge {
-      display: inline-block;
-      padding: 0.2rem 0.55rem;
-      border-radius: 6px;
+    .chip-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px;
+      padding: 0.3rem 0.65rem;
       font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 0.02em;
+      color: #fff;
+      cursor: pointer;
     }
-    .badge-success { background: var(--emerald-bg); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.3); }
-    .badge-warning { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }
-    .badge-danger { background: var(--rose-bg); color: var(--rose); border: 1px solid rgba(244, 63, 94, 0.3); }
-    .badge-info { background: rgba(59, 130, 246, 0.12); color: var(--primary); border: 1px solid rgba(59, 130, 246, 0.3); }
-    .badge-gray { background: rgba(148, 163, 184, 0.12); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.25); }
+    .chip-btn:active { background: var(--primary); }
 
-    .nav-tabs {
+    .chat-input-bar {
+      padding: 0.6rem 0.8rem;
+      background: var(--card-bg);
+      border-top: 1px solid var(--card-border);
       display: flex;
       gap: 0.5rem;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 0.5rem;
-      overflow-x: auto;
+      align-items: center;
+      flex-shrink: 0;
     }
-    .tab-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      padding: 0.5rem 1rem;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      border-radius: 8px;
-      transition: all 0.2s;
-      white-space: nowrap;
-    }
-    .tab-btn.active {
-      background: var(--bg-card);
+    .chat-input {
+      flex: 1;
+      background: #0a0f1c;
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 0.65rem 1rem;
       color: #fff;
-      border: 1px solid var(--border);
+      font-size: 0.9rem;
+      outline: none;
     }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
+    .chat-input:focus { border-color: var(--primary); }
+    .chat-send-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: none;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .chat-send-btn:active { transform: scale(0.92); }
 
-    .task-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 1rem;
-    }
-    .task-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 1.1rem;
+    /* TAB 2: Task Cards */
+    .task-item {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 0.9rem;
       display: flex;
       flex-direction: column;
-      gap: 0.7rem;
-      transition: transform 0.15s ease, border-color 0.15s ease;
+      gap: 0.5rem;
       cursor: pointer;
     }
-    .task-card:hover {
-      border-color: var(--border-focus);
-      transform: translateY(-2px);
-    }
-    .task-card.completed { border-left: 4px solid var(--emerald); }
-    .task-card.in_progress { border-left: 4px solid var(--amber); }
-    .task-card.failed { border-left: 4px solid var(--rose); }
-    .task-card.pending { border-left: 4px solid var(--text-muted); }
+    .task-item.completed { border-left: 4px solid var(--emerald); }
+    .task-item.in_progress { border-left: 4px solid var(--amber); }
+    .task-item.pending { border-left: 4px solid var(--muted); }
 
-    .task-header {
+    .task-top {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      gap: 0.5rem;
-    }
-    .task-id {
-      font-size: 0.8rem;
-      font-family: monospace;
-      font-weight: 700;
-      color: var(--cyan);
+      align-items: center;
     }
     .task-title {
       font-size: 0.95rem;
       font-weight: 700;
-      color: #fff;
-    }
-    .task-desc {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      line-height: 1.4;
-    }
-    .task-meta {
-      display: flex;
-      gap: 0.4rem;
-      flex-wrap: wrap;
-      margin-top: auto;
-      padding-top: 0.5rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
     }
 
-    .form-group {
+    /* Bottom Navigation Toolbar */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: var(--bottom-nav-height);
+      background: rgba(18, 24, 38, 0.95);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 50;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .nav-item {
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
-      margin-bottom: 1rem;
-    }
-    .form-group label {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-    .form-input {
-      background: #090e18;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: #fff;
-      padding: 0.65rem 0.85rem;
-      font-size: 0.9rem;
-      width: 100%;
-    }
-    .form-input:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
-    }
-    pre {
-      background: #060a12;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1rem;
-      overflow-x: auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.85rem;
-      line-height: 1.45;
-      color: #cbd5e1;
-    }
-    .banner {
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(16, 185, 129, 0.08));
-      border: 1px solid rgba(59, 130, 246, 0.25);
-      border-radius: 12px;
-      padding: 1.25rem;
-      display: flex;
-      justify-content: space-between;
       align-items: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-    .banner-title {
-      font-size: 1.1rem;
-      font-weight: 800;
-      margin-bottom: 0.25rem;
-    }
-    .banner-desc {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-    .toast {
-      position: fixed;
-      bottom: 1.5rem;
-      right: 1.5rem;
-      padding: 0.8rem 1.2rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: #fff;
-      font-size: 0.88rem;
+      gap: 0.2rem;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.72rem;
       font-weight: 600;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-      display: none;
-      z-index: 999;
-      animation: fadeIn 0.2s ease;
+      padding: 0.4rem 0.8rem;
+      border-radius: 12px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
     }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .nav-item svg {
+      width: 22px;
+      height: 22px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+    }
+    .nav-item.active {
+      color: var(--primary);
+    }
+    .nav-item.active svg {
+      stroke: var(--primary);
+    }
 
     /* Modal */
     .modal-backdrop {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.75);
+      background: rgba(0,0,0,0.8);
       backdrop-filter: blur(4px);
       display: none;
       justify-content: center;
-      align-items: center;
+      align-items: flex-end;
       z-index: 100;
-      padding: 1rem;
     }
-    .modal-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      max-width: 700px;
-      width: 100%;
+    .modal-bottom-sheet {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px 20px 0 0;
       max-height: 85vh;
+      width: 100%;
+      max-width: 600px;
       overflow-y: auto;
-      padding: 1.5rem;
+      padding: 1.25rem;
       display: flex;
       flex-direction: column;
       gap: 1rem;
+      animation: slideUp 0.2s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      top: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--card-bg);
+      border: 1px solid var(--emerald);
+      color: #fff;
+      padding: 0.6rem 1.1rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: none;
+      z-index: 200;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
     }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="brand">
-      <div class="logo-badge">R</div>
-      <div>
-        <h1>RAMAZAN AI <span>v1.0 Orchestrator</span></h1>
-      </div>
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="header-logo">R</div>
+      <div class="header-title">RAMAZAN AI</div>
     </div>
-    <div class="header-actions">
-      <button class="btn btn-outline btn-sm" onclick="triggerAction('/api/step', 'Sıradaki Görev Çalıştırılıyor...')">
-        ▶️ Adım Yürüt (Step)
-      </button>
-      <button class="btn btn-emerald btn-sm" onclick="triggerAction('/api/run', 'Tam Otonom Orkestrasyon Başlatıldı...')">
-        ⚡ Tümünü Çalıştır (Run)
-      </button>
-      <button class="btn btn-outline btn-sm" onclick="triggerAction('/api/test', 'Testler Çalıştırılıyor...')">
-        🧪 Testleri Koş
-      </button>
-      <button class="btn btn-outline btn-sm" onclick="triggerAction('/api/audit', 'Nihai Kalite Denetimi Yapılıyor...')">
-        🛡️ Final Audit
-      </button>
-      <button class="btn btn-outline btn-sm" onclick="refreshData()">
-        🔄 Yenile
-      </button>
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <span class="status-badge" id="header-status">HAZIR</span>
     </div>
   </header>
 
-  <main>
-    <!-- Status Banner -->
-    <div class="banner">
-      <div>
-        <div class="banner-title" id="banner-title">Proje Durumu: Yükleniyor...</div>
-        <div class="banner-desc" id="banner-desc">Deterministik Multi-Agent Yazılım Mühendisliği Ekibi devrede.</div>
-      </div>
-      <div style="display: flex; gap: 0.5rem;">
-        <span class="badge badge-info" id="badge-autonomy">MOD: ADIM ADIM</span>
-        <span class="badge badge-success" id="badge-status">DURUM: HAZIR</span>
-      </div>
-    </div>
+  <!-- Content Tabs -->
+  <div class="content-area">
 
-    <!-- Stats Grid -->
-    <div class="stats-grid">
-      <div class="card">
-        <div class="stat-label">Toplam İlerleme</div>
-        <div class="stat-value" id="stat-progress">0%</div>
-        <div class="progress-bar-bg">
-          <div class="progress-bar-fill" id="progress-fill"></div>
+    <!-- TAB 1: Chat (Default) -->
+    <div id="tab-chat" class="tab-pane active" style="padding: 0;">
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <!-- Dynamically populated -->
+        </div>
+
+        <div class="chat-input-bar">
+          <input type="text" id="chat-input" class="chat-input" placeholder="Ne yapmak istiyorsun kanka? Yaz..." onkeypress="handleKey(event)">
+          <button class="chat-send-btn" onclick="sendChat()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
         </div>
       </div>
+    </div>
+
+    <!-- TAB 2: Tasks (Pipeline) -->
+    <div id="tab-tasks" class="tab-pane">
       <div class="card">
-        <div class="stat-label">Görev Sayısı</div>
-        <div class="stat-value" id="stat-tasks">0 / 0</div>
-        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.4rem;" id="stat-tasks-detail">
-          0 Tamamlandı, 0 Bekliyor
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--muted); text-transform: uppercase;">İlerleme</span>
+          <span style="font-size: 0.85rem; font-weight: 800; color: var(--emerald);" id="pipeline-progress-text">0%</span>
+        </div>
+        <div style="background: rgba(255,255,255,0.08); height: 8px; border-radius: 9999px; overflow: hidden;">
+          <div id="pipeline-progress-bar" style="background: linear-gradient(90deg, #3b82f6, #10b981); width: 0%; height: 100%;"></div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+          <button class="btn btn-emerald btn-block" onclick="executeStep()">
+            ▶️ Sonraki Adım (Step)
+          </button>
+          <button class="btn btn-primary btn-block" onclick="executeRun()">
+            ⚡ Tümünü Otonom Koş
+          </button>
         </div>
       </div>
+
+      <div style="font-size: 0.85rem; font-weight: 700; color: var(--muted); margin-top: 0.5rem;">GÖREV LİSTESİ (DAG)</div>
+      <div id="tasks-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+
+    <!-- TAB 3: API & Models -->
+    <div id="tab-api" class="tab-pane">
       <div class="card">
-        <div class="stat-label">Aktif Görev</div>
-        <div class="stat-value" style="font-size: 1.1rem;" id="stat-active-task">Yok (Boşta)</div>
-        <div style="font-size: 0.78rem; color: var(--emerald); margin-top: 0.4rem;" id="stat-active-agent">
-          Agent: Hazırda Bekliyor
-        </div>
-      </div>
-      <div class="card">
-        <div class="stat-label">Nesnel Test Motoru</div>
-        <div class="stat-value" style="font-size: 1.15rem;" id="stat-test-summary">Henüz Koşulmadı</div>
-        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.4rem;" id="stat-test-time">-</div>
-      </div>
-    </div>
-
-    <!-- Navigation Tabs -->
-    <div class="nav-tabs">
-      <button class="tab-btn active" onclick="openTab('tasks-tab', this)">📋 Görev Grafiği (Tasks)</button>
-      <button class="tab-btn" onclick="openTab('keys-tab', this)">🔑 Akıllı API & Model Yapılandırması</button>
-      <button class="tab-btn" onclick="openTab('arch-tab', this)">🏛️ Sistem Mimarisi & ADR</button>
-      <button class="tab-btn" onclick="openTab('audit-tab', this)">🛡️ Final Audit Raporu</button>
-    </div>
-
-    <!-- TAB 1: Tasks -->
-    <div id="tasks-tab" class="tab-content active">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h3 style="font-size: 1.1rem; font-weight: 700;">Deterministik Görev Listesi</h3>
-        <button class="btn btn-primary btn-sm" onclick="triggerAction('/api/plan', 'Gereksinimler analiz edilip görevlere bölünüyor...')">
-          ➕ Gereksinimlerden Görev Üret (Plan)
-        </button>
-      </div>
-      <div class="task-grid" id="task-container">
-        <!-- Rendered dynamically -->
-      </div>
-    </div>
-
-    <!-- TAB 2: Smart API Key Setup -->
-    <div id="keys-tab" class="tab-content">
-      <div class="card" style="max-width: 800px; margin: 0 auto;">
-        <h3 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.5rem;">Akıllı API Anahtarı Tanımlama</h3>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
-          API anahtarını aşağıdaki kutuya yapıştır. Sistem anahtarın kime ait olduğunu (Gemini, Claude, OpenAI, DeepSeek, Groq) otomatik tanır ve ajan rollerini (Orchestrator, Worker, Reviewer) ideal şekilde eşleştirir.
+        <h3 style="font-size: 1.05rem; font-weight: 800; margin-bottom: 0.4rem;">🔑 Akıllı API Yapılandırması</h3>
+        <p style="font-size: 0.82rem; color: var(--muted); margin-bottom: 1rem;">
+          API anahtarını yapıştır; sistem Gemini, Claude, OpenAI veya DeepSeek olduğunu kendisi tanır ve ajan rollerine dağıtır.
         </p>
 
-        <div class="form-group">
-          <label>API Anahtarı veya Yerel Endpoint:</label>
-          <input type="password" id="api-key-input" class="form-input" placeholder="sk-ant-... veya AIza... veya sk-proj-... veya http://localhost:11434">
+        <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.8rem;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: var(--muted);">API Anahtarı / Endpoint:</label>
+          <input type="password" id="api-key-box" style="background: #0a0f1c; border: 1px solid var(--card-border); border-radius: 10px; padding: 0.7rem; color: #fff; font-size: 0.9rem;" placeholder="sk-ant-... veya AIza... veya sk-...">
         </div>
 
-        <div class="form-group">
-          <label>Otonomi Düzeyi (Human-in-the-Loop):</label>
-          <select id="autonomy-mode-select" class="form-input">
-            <option value="step_by_step">Adım Adım (step_by_step) - Önerilen: Her görevde onay bekle</option>
-            <option value="semi_autonomous">Yarı Otonom (semi_autonomous) - Kritik kararlarda ve Circuit Breaker'da onay bekle</option>
-            <option value="fully_autonomous">Tam Otonom (fully_autonomous) - Final Audit'e kadar kesintisiz çalış</option>
+        <div style="display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem;">
+          <label style="font-size: 0.8rem; font-weight: 600; color: var(--muted);">Çalışma Modu (Human-in-the-Loop):</label>
+          <select id="api-mode-box" style="background: #0a0f1c; border: 1px solid var(--card-border); border-radius: 10px; padding: 0.7rem; color: #fff; font-size: 0.85rem;">
+            <option value="step_by_step">Adım Adım (Önerilen: Her görevde durur)</option>
+            <option value="semi_autonomous">Yarı Otonom (Kritik durumlarda onay ister)</option>
+            <option value="fully_autonomous">Tam Otonom (Sonuna kadar otomatik çalışır)</option>
           </select>
         </div>
 
-        <button class="btn btn-primary" onclick="saveConfiguration()">
-          💾 Algıla ve Yapılandırmayı Kaydet
+        <button class="btn btn-emerald btn-block" onclick="saveApiKey()">
+          💾 Algıla ve Kaydet
         </button>
 
-        <div id="config-result" style="margin-top: 1.2rem; display: none;"></div>
+        <div id="key-detect-alert" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: 10px; background: rgba(16, 185, 129, 0.1); border: 1px solid var(--emerald); font-size: 0.85rem;"></div>
       </div>
-    </div>
 
-    <!-- TAB 3: Architecture & ADR -->
-    <div id="arch-tab" class="tab-content">
-      <div class="card" style="margin-bottom: 1rem;">
-        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;">Sistem Mimarisi (.ramazan/architecture.md)</h3>
-        <pre id="arch-content">Yükleniyor...</pre>
-      </div>
       <div class="card">
-        <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;">Mimari Karar Kayıtları (ADR)</h3>
-        <div id="adr-container">Yükleniyor...</div>
-      </div>
-    </div>
-
-    <!-- TAB 4: Final Audit -->
-    <div id="audit-tab" class="tab-content">
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <h3 style="font-size: 1.1rem; font-weight: 700;">Nihai Kalite Kapısı (Final Audit)</h3>
-          <button class="btn btn-emerald btn-sm" onclick="triggerAction('/api/audit', 'Final Audit Koşuluyor...')">
-            🛡️ Denetimi Şimdi Çalıştır
-          </button>
+        <h4 style="font-size: 0.9rem; font-weight: 700; margin-bottom: 0.5rem; color: var(--muted);">AKTİF AJAN MODELLERİ</h4>
+        <div id="model-mappings" style="font-size: 0.82rem; line-height: 1.6;">
+          Yükleniyor...
         </div>
-        <pre id="audit-content">Henüz audit raporu oluşturulmadı.</pre>
       </div>
     </div>
-  </main>
 
-  <!-- Modal for Task Details -->
-  <div class="modal-backdrop" id="task-modal" onclick="closeModal(event)">
-    <div class="modal-card" onclick="event.stopPropagation()">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h3 id="modal-title" style="font-size: 1.15rem; font-weight: 800;">Görev Detayı</h3>
-        <button class="btn btn-outline btn-sm" onclick="document.getElementById('task-modal').style.display='none'">✕</button>
+    <!-- TAB 4: Report & Test -->
+    <div id="tab-report" class="tab-pane">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+          <h4 style="font-size: 0.95rem; font-weight: 800;">🧪 Nesnel Test Motoru</h4>
+          <button class="btn btn-outline" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="runTestButton()">Testleri Koş</button>
+        </div>
+        <div id="test-report-box" style="font-size: 0.85rem; color: var(--muted);">
+          Henüz test çalıştırılmadı.
+        </div>
       </div>
-      <div id="modal-body"></div>
+
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+          <h4 style="font-size: 0.95rem; font-weight: 800;">🛡️ Final Audit Raporu</h4>
+          <button class="btn btn-emerald" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" onclick="runAuditButton()">Denetle</button>
+        </div>
+        <pre id="audit-report-box" style="font-size: 0.8rem; background: #060a12; padding: 0.75rem; border-radius: 8px; overflow-x: auto; color: #cbd5e1; max-height: 250px;">Yükleniyor...</pre>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Navigation Toolbar -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" onclick="switchNav('tab-chat', this)">
+      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+      <span>Sohbet</span>
+    </button>
+    <button class="nav-item" onclick="switchNav('tab-tasks', this)">
+      <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+      <span>Görevler</span>
+    </button>
+    <button class="nav-item" onclick="switchNav('tab-api', this)">
+      <svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="M21 2l-9.6 9.6"></path><path d="M15.5 7.5l3 3L22 7l-3-3"></path></svg>
+      <span>API & Model</span>
+    </button>
+    <button class="nav-item" onclick="switchNav('tab-report', this)">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+      <span>Raporlar</span>
+    </button>
+  </nav>
+
+  <!-- Modal Bottom Sheet -->
+  <div class="modal-backdrop" id="modal" onclick="closeModal(event)">
+    <div class="modal-bottom-sheet" onclick="event.stopPropagation()">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h4 id="modal-title" style="font-size: 1rem; font-weight: 800;">Görev Detayı</h4>
+        <button class="btn btn-outline" style="padding: 0.2rem 0.5rem;" onclick="closeModal()">✕</button>
+      </div>
+      <div id="modal-content" style="font-size: 0.85rem; line-height: 1.5;"></div>
     </div>
   </div>
 
   <div class="toast" id="toast">Bildirim</div>
 
   <script>
-    function showToast(msg, isError = false) {
-      const toast = document.getElementById('toast');
-      toast.innerText = msg;
-      toast.style.display = 'block';
-      toast.style.borderColor = isError ? 'var(--rose)' : 'var(--emerald)';
-      setTimeout(() => { toast.style.display = 'none'; }, 3200);
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.innerText = msg;
+      t.style.display = 'block';
+      setTimeout(() => { t.style.display = 'none'; }, 2800);
     }
 
-    function openTab(tabId, btn) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    function switchNav(tabId, el) {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
       document.getElementById(tabId).classList.add('active');
-      btn.classList.add('active');
+      el.classList.add('active');
 
-      if (tabId === 'arch-tab') loadArchitecture();
+      if (tabId === 'tab-tasks' || tabId === 'tab-report' || tabId === 'tab-api') {
+        refreshStatus();
+      }
     }
 
-    async function refreshData() {
+    function handleKey(e) {
+      if (e.key === 'Enter') sendChat();
+    }
+
+    async function loadChat() {
+      try {
+        const res = await fetch('/api/chat');
+        const data = await res.json();
+        renderChatMessages(data.messages || []);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderChatMessages(messages) {
+      const box = document.getElementById('chat-messages');
+      box.innerHTML = '';
+      messages.forEach(m => {
+        const bubble = document.createElement('div');
+        bubble.className = `chat-bubble ${m.sender}`;
+        
+        let html = `<div>${m.text.replace(/\\n/g, '<br>')}</div>`;
+        if (m.actions && m.actions.length > 0) {
+          html += `<div class="bubble-actions">`;
+          m.actions.forEach(a => {
+            if (a.prompt) {
+              html += `<button class="chip-btn" onclick="sendCustomPrompt('${a.prompt}')">${a.label}</button>`;
+            } else if (a.action === 'step') {
+              html += `<button class="chip-btn" style="background: var(--emerald);" onclick="executeStep()">${a.label}</button>`;
+            } else if (a.action === 'run') {
+              html += `<button class="chip-btn" style="background: var(--primary);" onclick="executeRun()">${a.label}</button>`;
+            } else if (a.tab === 'tasks') {
+              html += `<button class="chip-btn" onclick="switchNav('tab-tasks', document.querySelectorAll('.nav-item')[1])">${a.label}</button>`;
+            }
+          });
+          html += `</div>`;
+        }
+        bubble.innerHTML = html;
+        box.appendChild(bubble);
+      });
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function sendChat() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+
+      // Optimistic append
+      const box = document.getElementById('chat-messages');
+      const uBubble = document.createElement('div');
+      uBubble.className = 'chat-bubble user';
+      uBubble.innerText = text;
+      box.appendChild(uBubble);
+      box.scrollTop = box.scrollHeight;
+
+      showToast("Düşünülüyor & Planlanıyor...");
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ message: text })
+        });
+        const data = await res.json();
+        renderChatMessages(data.messages || []);
+      } catch (err) {
+        showToast("Hata oluştu kanka!");
+      }
+    }
+
+    function sendCustomPrompt(p) {
+      document.getElementById('chat-input').value = p;
+      sendChat();
+    }
+
+    async function refreshStatus() {
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
 
-        // Banner
-        const state = data.state || {};
-        document.getElementById('banner-title').innerText = `Proje: ${state.project || 'RAMAZAN AI'} | Durum: ${state.status}`;
-        document.getElementById('badge-status').innerText = `DURUM: ${state.status}`;
-        document.getElementById('badge-status').className = `badge ${state.status === 'COMPLETED' ? 'badge-success' : (state.status === 'IN_PROGRESS' ? 'badge-warning' : 'badge-info')}`;
+        // Header
+        const st = data.state || {};
+        document.getElementById('header-status').innerText = st.status || 'HAZIR';
 
-        const autonomy = (data.config?.system?.autonomyMode || 'step_by_step').toUpperCase();
-        document.getElementById('badge-autonomy').innerText = `MOD: ${autonomy}`;
+        // Pipeline Tab
+        const prog = st.progress || 0;
+        document.getElementById('pipeline-progress-text').innerText = `${prog}%`;
+        document.getElementById('pipeline-progress-bar').style.width = `${prog}%`;
 
-        // Progress
-        const prog = state.progress || 0;
-        document.getElementById('stat-progress').innerText = `${prog}%`;
-        document.getElementById('progress-fill').style.width = `${prog}%`;
+        renderTaskList(data.tasks || [], st.completedTasks || []);
 
-        // Tasks count
-        const total = state.totalTasks || 0;
-        const comp = (state.completedTasks || []).length;
-        document.getElementById('stat-tasks').innerText = `${comp} / ${total}`;
-        document.getElementById('stat-tasks-detail').innerText = `${comp} Tamamlandı, ${total - comp} Bekliyor`;
-
-        // Active task
-        document.getElementById('stat-active-task').innerText = state.currentTask || 'Yok (Boşta)';
-        document.getElementById('stat-active-agent').innerText = state.currentTask ? 'Worker & Test Engine devrede' : 'Agent: Beklemede';
-
-        // Test status
-        if (data.latestTest) {
-          const pass = data.latestTest.passed;
-          document.getElementById('stat-test-summary').innerText = pass ? '✅ Testler Başarılı' : '❌ Testler Başarısız';
-          document.getElementById('stat-test-summary').style.color = pass ? 'var(--emerald)' : 'var(--rose)';
-          document.getElementById('stat-test-time').innerText = `Son Test: ${data.latestTest.timestamp.slice(11, 19)} (Süre: ${data.latestTest.duration}s)`;
+        // Models
+        if (data.config && data.config.models) {
+          const m = data.config.models;
+          document.getElementById('model-mappings').innerHTML = `
+            <div><strong>Orchestrator:</strong> <code>${m.orchestrator.model}</code></div>
+            <div><strong>Architect:</strong> <code>${m.architect.model}</code></div>
+            <div><strong>Worker (Genel):</strong> <code>${m.worker.medium.model}</code></div>
+            <div><strong>Reviewer:</strong> <code>${m.reviewer.model}</code></div>
+            <div style="margin-top: 0.3rem;"><strong>Mod:</strong> <code>${data.config.system.autonomyMode}</code></div>
+          `;
         }
 
-        // Render Task Cards
-        renderTasks(data.tasks || [], state.completedTasks || []);
+        // Test Summary
+        if (data.latestTest) {
+          const lt = data.latestTest;
+          document.getElementById('test-report-box').innerHTML = `
+            <div style="font-weight: 700; color: ${lt.passed ? 'var(--emerald)' : 'var(--rose)'};">
+              ${lt.passed ? '✅ TÜM TESTLER BAŞARILI' : '❌ TESTLER BAŞARISIZ'} (Kod: ${lt.exitCode})
+            </div>
+            <div style="font-size: 0.78rem; margin-top: 0.2rem;">Süre: ${lt.duration}s | ${lt.summary}</div>
+          `;
+        }
 
         // Audit Summary
         if (data.auditSummary) {
-          document.getElementById('audit-content').innerText = data.auditSummary;
+          document.getElementById('audit-report-box').innerText = data.auditSummary;
         }
 
-      } catch (err) {
-        console.error("Failed to load status:", err);
+      } catch (e) {
+        console.error(e);
       }
     }
 
-    function renderTasks(tasks, completedIds) {
-      const container = document.getElementById('task-container');
-      container.innerHTML = '';
-
-      if (tasks.length === 0) {
-        container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 2rem;">Henüz planlanmış görev yok. Yukarıdaki 'Gereksinimlerden Görev Üret' butonuna tıklayabilirsiniz.</div>`;
+    function renderTaskList(tasks, completed) {
+      const box = document.getElementById('tasks-list');
+      box.innerHTML = '';
+      if (!tasks.length) {
+        box.innerHTML = '<div style="text-align: center; color: var(--muted); padding: 1.5rem;">Henüz görev yok. Sohbet sekmesinden istediğin yazılımı yazabilirsin!</div>';
         return;
       }
-
       tasks.forEach(t => {
-        const isDone = completedIds.includes(t.id) || t.status === 'COMPLETED';
-        const cardClass = isDone ? 'completed' : (t.status === 'IN_PROGRESS' ? 'in_progress' : (t.status === 'FAILED' ? 'failed' : 'pending'));
-        const badgeClass = isDone ? 'badge-success' : (t.status === 'IN_PROGRESS' ? 'badge-warning' : (t.status === 'FAILED' ? 'badge-danger' : 'badge-gray'));
+        const isDone = completed.includes(t.id) || t.status === 'COMPLETED';
+        const cardClass = isDone ? 'completed' : (t.status === 'IN_PROGRESS' ? 'in_progress' : 'pending');
+        const stColor = isDone ? 'var(--emerald)' : (t.status === 'IN_PROGRESS' ? 'var(--amber)' : 'var(--muted)');
 
-        const card = document.createElement('div');
-        card.className = `task-card ${cardClass}`;
-        card.onclick = () => openTaskModal(t.id);
-        card.innerHTML = `
-          <div class="task-header">
-            <span class="task-id">${t.id}</span>
-            <span class="badge ${badgeClass}">${t.status}</span>
+        const el = document.createElement('div');
+        el.className = `task-item ${cardClass}`;
+        el.onclick = () => openTaskDetails(t.id);
+        el.innerHTML = `
+          <div class="task-top">
+            <span style="font-size: 0.75rem; font-weight: 800; color: var(--cyan);">${t.id}</span>
+            <span style="font-size: 0.72rem; font-weight: 700; color: ${stColor};">${t.status}</span>
           </div>
           <div class="task-title">${t.title}</div>
-          <div class="task-desc">${t.description || ''}</div>
-          <div class="task-meta">
-            <span class="badge badge-info">Öncelik: ${t.priority.toUpperCase()}</span>
-            <span class="badge badge-gray">Karmaşıklık: ${t.complexity.toUpperCase()}</span>
-            <span class="badge badge-gray">Tekrar: ${t.retryCount}/${t.maxRetries}</span>
-          </div>
+          <div style="font-size: 0.75rem; color: var(--muted);">${t.description}</div>
         `;
-        container.appendChild(card);
+        box.appendChild(el);
       });
     }
 
-    async function openTaskModal(taskId) {
+    async function openTaskDetails(taskId) {
       try {
         const res = await fetch(`/api/task/${taskId}`);
         const data = await res.json();
         const t = data.task;
 
         document.getElementById('modal-title').innerText = `[${t.id}] ${t.title}`;
-        let bodyHtml = `
+        let html = `
           <div><strong>Açıklama:</strong> ${t.description}</div>
-          <div style="margin-top: 0.5rem;"><strong>Hedef Dosyalar:</strong> ${t.files.map(f => `<code>${f}</code>`).join(', ') || 'Yok'}</div>
-          <div style="margin-top: 0.5rem;"><strong>Kabul Kriterleri:</strong></div>
-          <ul style="margin-left: 1.2rem; font-size: 0.85rem; color: var(--text-muted);">
+          <div style="margin-top: 0.4rem;"><strong>Öncelik:</strong> ${t.priority.toUpperCase()} | <strong>Karmaşıklık:</strong> ${t.complexity.toUpperCase()}</div>
+          <div style="margin-top: 0.4rem;"><strong>Kabul Kriterleri:</strong></div>
+          <ul style="margin-left: 1rem; color: var(--muted);">
             ${t.acceptanceCriteria.map(c => `<li>${c}</li>`).join('')}
           </ul>
         `;
-
         if (data.memory) {
-          bodyHtml += `
-            <div style="margin-top: 1rem;">
-              <strong>Görev Hafızası (.ramazan/memory/${taskId}.md):</strong>
-              <pre style="margin-top: 0.4rem; max-height: 200px;">${data.memory}</pre>
-            </div>
-          `;
+          html += `<div style="margin-top: 0.8rem;"><strong>Hafıza Kaydı:</strong><pre style="background: #060a12; padding: 0.5rem; border-radius: 6px; font-size: 0.75rem; max-height: 140px; overflow: auto;">${data.memory}</pre></div>`;
         }
-
-        if (data.review) {
-          bodyHtml += `
-            <div style="margin-top: 1rem;">
-              <strong>Denetim Raporu (.ramazan/reviews/${taskId}.md):</strong>
-              <pre style="margin-top: 0.4rem; max-height: 200px;">${data.review}</pre>
-            </div>
-          `;
-        }
-
-        document.getElementById('modal-body').innerHTML = bodyHtml;
-        document.getElementById('task-modal').style.display = 'flex';
-      } catch (err) {
-        showToast("Görev detayı alınamadı", true);
+        document.getElementById('modal-content').innerHTML = html;
+        document.getElementById('modal').style.display = 'flex';
+      } catch (e) {
+        showToast("Detay alınamadı.");
       }
     }
 
-    function closeModal(e) {
-      document.getElementById('task-modal').style.display = 'none';
+    function closeModal() {
+      document.getElementById('modal').style.display = 'none';
     }
 
-    async function triggerAction(endpoint, loadingMsg) {
-      showToast(loadingMsg);
+    async function executeStep() {
+      showToast("Adım yürütülüyor...");
       try {
-        const res = await fetch(endpoint, { method: 'POST' });
+        const res = await fetch('/api/step', { method: 'POST' });
         const data = await res.json();
-        showToast(data.message || "İşlem başarıyla tamamlandı!");
-        refreshData();
-      } catch (err) {
-        showToast("İşlem sırasında hata oluştu!", true);
+        showToast(data.message || "Görev tamamlandı!");
+        refreshStatus();
+        loadChat();
+      } catch (e) {
+        showToast("Hata oluştu.");
       }
     }
 
-    async function saveConfiguration() {
-      const key = document.getElementById('api-key-input').value;
-      const mode = document.getElementById('autonomy-mode-select').value;
+    async function executeRun() {
+      showToast("Tüm görevler yürütülüyor...");
+      try {
+        const res = await fetch('/api/run', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message || "Tamamlandı!");
+        refreshStatus();
+        loadChat();
+      } catch (e) {
+        showToast("Hata oluştu.");
+      }
+    }
 
+    async function runTestButton() {
+      showToast("Testler koşuluyor...");
+      try {
+        await fetch('/api/test', { method: 'POST' });
+        showToast("Testler tamamlandı!");
+        refreshStatus();
+      } catch (e) {
+        showToast("Test hatası!");
+      }
+    }
+
+    async function runAuditButton() {
+      showToast("Final Audit denetleniyor...");
+      try {
+        await fetch('/api/audit', { method: 'POST' });
+        showToast("Audit tamamlandı!");
+        refreshStatus();
+      } catch (e) {
+        showToast("Audit hatası!");
+      }
+    }
+
+    async function saveApiKey() {
+      const key = document.getElementById('api-key-box').value.trim();
+      const mode = document.getElementById('api-mode-box').value;
       try {
         const res = await fetch('/api/configure', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ key, mode })
         });
         const data = await res.json();
-        if (data.success) {
-          showToast("Yapılandırma başarıyla güncellendi!");
-          const resDiv = document.getElementById('config-result');
-          resDiv.style.display = 'block';
-
-          if (data.detected) {
-            resDiv.innerHTML = `
-              <div class="card" style="background: rgba(16, 185, 129, 0.1); border-color: var(--emerald);">
-                <div style="font-weight: 800; color: var(--emerald);">✅ Sağlayıcı Otomatik Tanındı: ${data.detected.provider.toUpperCase()}</div>
-                <div style="font-size: 0.85rem; margin-top: 0.3rem;">Ortam değişkeni: <code>${data.detected.envVar}</code></div>
-                <div style="font-size: 0.85rem; margin-top: 0.3rem;">Ajanlar bu sağlayıcının en uygun modellerine bağlandı.</div>
-              </div>
-            `;
-          }
-          refreshData();
-        }
-      } catch (err) {
-        showToast("Yapılandırma kaydedilemedi!", true);
-      }
-    }
-
-    async function loadArchitecture() {
-      try {
-        const res = await fetch('/api/architecture');
-        const data = await res.json();
-        document.getElementById('arch-content').innerText = data.architecture || "Henüz mimari dosyası yok.";
-
-        const adrContainer = document.getElementById('adr-container');
-        if (data.adrs && data.adrs.length > 0) {
-          adrContainer.innerHTML = data.adrs.map(a => `
-            <div style="margin-bottom: 0.75rem;">
-              <strong>${a.id}</strong>
-              <pre style="margin-top: 0.3rem;">${a.content}</pre>
-            </div>
-          `).join('');
+        const alertBox = document.getElementById('key-detect-alert');
+        alertBox.style.display = 'block';
+        if (data.detected) {
+          alertBox.innerHTML = `✅ <strong>${data.detected.provider.toUpperCase()}</strong> otomatik algılandı ve tüm ajanlara bağlandı!`;
         } else {
-          adrContainer.innerText = "Kayıtlı ADR bulunamadı.";
+          alertBox.innerHTML = `✅ Yapılandırma ve çalışma modu güncellendi!`;
         }
-      } catch (err) {
-        console.error("Architecture load failed:", err);
+        showToast("Ayarlar kaydedildi!");
+        refreshStatus();
+      } catch (e) {
+        showToast("Kayıt hatası!");
       }
     }
 
-    // Auto-refresh every 5 seconds
-    refreshData();
-    setInterval(refreshData, 5000);
+    // Init
+    loadChat();
+    refreshStatus();
+    setInterval(refreshStatus, 4000);
   </script>
 </body>
 </html>
