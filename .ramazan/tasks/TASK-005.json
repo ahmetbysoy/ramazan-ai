@@ -5,7 +5,7 @@
   "type": "implementation",
   "priority": "high",
   "complexity": "medium",
-  "status": "PENDING",
+  "status": "COMPLETED",
   "dependencies": [],
   "files": [
     "cops_robbers_game.html",
