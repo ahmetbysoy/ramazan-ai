@@ -86,6 +86,13 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
             if target.suffix in [".html", ".htm"]:
                 return HTMLResponse(content)
             return JSONResponse({"path": file_path, "content": content})
+        # Virtual embedded game template fallbacks
+        if file_path == "cops_robbers_game.html":
+            from ramazan.ui.games import COPS_ROBBERS_GAME_HTML
+            return HTMLResponse(COPS_ROBBERS_GAME_HTML)
+        if file_path == "monkey_game.html":
+            from ramazan.ui.games import MONKEY_GAME_HTML
+            return HTMLResponse(MONKEY_GAME_HTML)
         raise HTTPException(status_code=404, detail="Dosya bulunamadı.")
 
     @app.get("/api/status")
