@@ -1,0 +1,30 @@
+{
+  "id": "TASK-005",
+  "title": "Hırsız Polis Mobil Oyunu (Single-File HTML & JS)",
+  "description": "HTML5 Canvas tabanlı, mobil dokunmatik D-Pad ve Nitro kontrollü, polis yapay zekası, elmas/altın ganimetleri ve Web Audio ses efektli tek dosya mobil oyun.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "PENDING",
+  "dependencies": [],
+  "files": [
+    "cops_robbers_game.html",
+    "tests/test_cops_game.py"
+  ],
+  "acceptanceCriteria": [
+    "Tek dosya HTML5 Canvas ve responsive mobil viewport",
+    "Mobil dokunmatik D-Pad (Yukarı, Aşağı, Sol, Sağ) ve Nitro Hızlandırıcı (Boost) butonları",
+    "Polis Yapay Zekası (AI takip algoritması, seviye arttıkça çoğalan ve hızlanan polisler)",
+    "Aranma seviyesi (Wanted Stars ⭐), altın/elmas ganimetleri ve puan sistemi",
+    "Web Audio API osilatörleri ile harici dosya gerektirmeyen siren ve ganimet ses efektleri",
+    "Birim testleri ve nesnel test motoru doğrulaması"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": null,
+  "reviewFeedback": null
+}
