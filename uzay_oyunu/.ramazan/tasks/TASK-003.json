@@ -1,0 +1,30 @@
+{
+  "id": "TASK-003",
+  "title": "Implement Touch and Keyboard Input Manager",
+  "description": "Develop an input management system supporting both HTML5 touch controls (virtual joystick or direct touch drag) and keyboard fallback (arrow keys/WASD and spacebar). Include unit tests verifying input state mapping.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "COMPLETED",
+  "dependencies": [
+    "TASK-001"
+  ],
+  "files": [
+    "src/engine/input.ts",
+    "tests/engine/input.test.ts"
+  ],
+  "acceptanceCriteria": [
+    "Touch events correctly translate to normalized directional vectors",
+    "Keyboard event listeners update the internal input state immutably",
+    "Unit tests pass with 100% assertions"
+  ],
+  "assignedAgent": "Worker",
+  "assignedModel": "gemini-flash-lite-latest",
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": "All tests passed successfully.",
+  "reviewFeedback": "The Touch and Keyboard Input Manager implementation is clean, adheres to immutability rules, handles keyboard normalization and pointer events correctly, and is thoroughly tested.",
+  "lastError": null
+}

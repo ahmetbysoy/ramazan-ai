@@ -24,6 +24,10 @@ wheels/
 # Virtual environments
 .cache/
 .env
+.env.*
+*.env
+**/.env
+**/.env.*
 .venv
 env/
 venv/

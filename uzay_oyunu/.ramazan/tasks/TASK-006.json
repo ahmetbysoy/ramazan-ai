@@ -1,0 +1,30 @@
+{
+  "id": "TASK-006",
+  "title": "Implement Asteroid Entity and Spawning System",
+  "description": "Create the asteroid entity system supporting random trajectory generation, variable sizes, and split-on-impact mechanics. Include unit tests for collision bounding boxes and asteroid generation logic.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "COMPLETED",
+  "dependencies": [
+    "TASK-001"
+  ],
+  "files": [
+    "src/entities/asteroid.ts",
+    "tests/entities/asteroid.test.ts"
+  ],
+  "acceptanceCriteria": [
+    "Asteroid spawner generates entities at canvas boundaries with velocities directed inward",
+    "Large asteroids split into smaller child asteroids upon receiving damage",
+    "Unit tests pass with 100% assertions"
+  ],
+  "assignedAgent": "Worker",
+  "assignedModel": "gemini-flash-lite-latest",
+  "retryCount": 2,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": "All tests passed successfully.",
+  "reviewFeedback": "The asteroid entity and spawning system implementation is clean, modular, immutable, and properly tested. Vector math, screen wrapping via modulo offset ranges, collision checks, and splitting mechanics are correctly implemented.",
+  "lastError": null
+}
