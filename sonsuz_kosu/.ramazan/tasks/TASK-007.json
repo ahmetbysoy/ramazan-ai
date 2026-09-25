@@ -1,0 +1,31 @@
+{
+  "id": "TASK-007",
+  "title": "Implement Game UI Overlay and Integration",
+  "description": "Create onscreen UI overlays for the start screen, live score display, game over screen with final score, high score table, and restart button, fully integrated with the game loop.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "COMPLETED",
+  "dependencies": [
+    "TASK-005",
+    "TASK-006"
+  ],
+  "files": [
+    "src/js/ui.js",
+    "tests/test_ui.py"
+  ],
+  "acceptanceCriteria": [
+    "UI displays current score during gameplay and shows game over summary overlay upon death",
+    "Restart button successfully resets game state, player, and pipes",
+    "Unit tests confirm UI DOM element interactions and state bindings"
+  ],
+  "assignedAgent": "Worker",
+  "assignedModel": "gemini-flash-lite-latest",
+  "retryCount": 3,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": "All tests passed successfully.",
+  "reviewFeedback": "The UIManager implementation correctly handles all required DOM overlays, live scoring, start/game-over transitions, high score table rendering, and event binding. All unit tests pass successfully, adhering to modular architecture and clean code principles.",
+  "lastError": null
+}

@@ -1,0 +1,12 @@
+{
+  "taskId": "TASK-006",
+  "problem": "Task TASK-006 failed after 4 attempts. Tests failed with exit code 2.",
+  "attempts": 4,
+  "options": [
+    "A) Change approach: Reject current design and break down into simpler sub-tasks",
+    "B) Switch model: Execute with an alternate high-reasoning model",
+    "C) User intervention: Manual review and intervention required"
+  ],
+  "recommendation": "Do not proceed automatically. Resolve conflict or approve revised approach.",
+  "status": "USER_INTERVENTION_REQUIRED"
+}

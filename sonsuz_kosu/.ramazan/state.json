@@ -1,0 +1,20 @@
+{
+  "project": "sonsuz_kosu",
+  "version": 1,
+  "status": "COMPLETED",
+  "currentTask": null,
+  "completedTasks": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006",
+    "TASK-007"
+  ],
+  "failedTasks": [],
+  "blockedTasks": [],
+  "totalTasks": 7,
+  "progress": 100.0,
+  "lastUpdated": "2026-09-25T23:21:20.508775+00:00"
+}

@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Sonsuz Koşu - RAMAZAN AI Autonomous Flappy Runner</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(180deg, #4ec0ca 0%, #1a3c40 100%);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #gameWrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      max-width: 480px;
+      max-height: 800px;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+      background: #70c5ce;
+    }
+    #gameCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    /* UI Overlays */
+    .hud {
+      position: absolute;
+      top: 16px;
+      left: 0;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      padding: 0 20px;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .hud-box {
+      background: rgba(0, 0, 0, 0.55);
+      border: 2px solid #fff;
+      border-radius: 12px;
+      padding: 8px 16px;
+      color: #fff;
+      font-weight: bold;
+      font-size: 1.2rem;
+      text-shadow: 2px 2px 0px #000;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+    .hud-box span {
+      color: #ffd700;
+      font-size: 1.4rem;
+    }
+    /* Modals */
+    .modal {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(18, 30, 49, 0.94);
+      border: 3px solid #ffd700;
+      border-radius: 20px;
+      padding: 30px;
+      text-align: center;
+      color: #fff;
+      z-index: 20;
+      width: 85%;
+      max-width: 360px;
+      box-shadow: 0 0 35px rgba(255, 215, 0, 0.4);
+    }
+    .modal h1 {
+      color: #ffd700;
+      font-size: 2.2rem;
+      margin-bottom: 12px;
+      text-shadow: 2px 2px 0 #000;
+    }
+    .modal p {
+      font-size: 1rem;
+      color: #d0e0f0;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    .btn-action {
+      background: linear-gradient(180deg, #ff9900 0%, #cc6600 100%);
+      border: 2px solid #fff;
+      color: #fff;
+      font-size: 1.25rem;
+      font-weight: bold;
+      padding: 12px 32px;
+      border-radius: 25px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+      transition: transform 0.1s;
+    }
+    .btn-action:active {
+      transform: scale(0.95);
+    }
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="gameWrapper">
+    <canvas id="gameCanvas" width="400" height="640"></canvas>
+
+    <div class="hud">
+      <div class="hud-box">SKOR: <span id="scoreVal">0</span></div>
+      <div class="hud-box">REKOR: <span id="highScoreVal">0</span></div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="startModal" class="modal">
+      <h1>SONSUZ KOŞU</h1>
+      <p>
+        RAMAZAN AI Gemini Engine ile otonom üretildi.<br><br>
+        Boru engellerine çarpmadan zıpla ve en yüksek skoru yap!<br><br>
+        📱 <b>Mobil:</b> Ekrana Dokun (Zıpla)<br>
+        💻 <b>Masaüstü:</b> Boşluk (Space) veya Tıkla
+      </p>
+      <button class="btn-action" id="btnStart">BAŞLA</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverModal" class="modal hidden">
+      <h1 style="color: #ff4757;">OYUN BİTTİ</h1>
+      <p>
+        Skorun: <span id="finalScore" style="color: #ffd700; font-size: 1.8rem; font-weight: bold;">0</span><br><br>
+        En Yüksek Skor: <span id="finalHighScore" style="color: #2ed573; font-size: 1.3rem; font-weight: bold;">0</span>
+      </p>
+      <button class="btn-action" id="btnRestart">TEKRAR OYNA</button>
+    </div>
+  </div>
+
+  <script>
+    // --- AUDIO SYNTHESIZER ---
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+      }
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) this.ctx = new AudioContext();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+      }
+      playJump() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(350, now);
+        osc.frequency.exponentialRampToValueAtTime(750, now + 0.12);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      }
+      playScore() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(587.33, now);
+        osc.frequency.setValueAtTime(880, now + 0.08);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      }
+      playHit() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.linearRampToValueAtTime(40, now + 0.25);
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      }
+    }
+
+    const sound = new SoundEngine();
+
+    // --- GAME ENGINE ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const bird = {
+      x: 70,
+      y: 250,
+      radius: 16,
+      vy: 0,
+      gravity: 0.45,
+      jumpStrength: -8.2,
+      rotation: 0
+    };
+
+    let pipes = [];
+    const pipeWidth = 62;
+    const pipeGap = 155;
+    const pipeSpeed = 2.4;
+    let spawnTimer = 0;
+
+    let score = 0;
+    let highScore = parseInt(localStorage.getItem('sonsuz_kosu_high') || '0', 10);
+    document.getElementById('highScoreVal').innerText = highScore;
+
+    let state = 'START'; // START, PLAYING, GAMEOVER
+    let clouds = [];
+
+    for (let i = 0; i < 4; i++) {
+      clouds.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * 200 + 40,
+        speed: 0.3 + Math.random() * 0.4,
+        size: 30 + Math.random() * 20
+      });
+    }
+
+    function jump() {
+      if (state !== 'PLAYING') return;
+      bird.vy = bird.jumpStrength;
+      sound.playJump();
+    }
+
+    // Input handlers
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (state === 'PLAYING') jump();
+      }
+    });
+
+    const wrapper = document.getElementById('gameWrapper');
+    wrapper.addEventListener('pointerdown', (e) => {
+      if (e.target.tagName === 'BUTTON') return;
+      if (state === 'PLAYING') jump();
+    });
+
+    function spawnPipe() {
+      const minTop = 60;
+      const maxTop = canvas.height - pipeGap - 100;
+      const topHeight = Math.floor(Math.random() * (maxTop - minTop) + minTop);
+      pipes.push({
+        x: canvas.width,
+        top: topHeight,
+        bottom: topHeight + pipeGap,
+        passed: false
+      });
+    }
+
+    let lastTime = performance.now();
+
+    function loop(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+
+      if (state === 'PLAYING') {
+        update(dt);
+      }
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    function update(dt) {
+      // Bird physics
+      bird.vy += bird.gravity;
+      bird.y += bird.vy;
+      bird.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (bird.vy * 0.08)));
+
+      // Ground / Ceiling collision
+      if (bird.y + bird.radius >= canvas.height - 40) {
+        gameOver();
+        return;
+      }
+      if (bird.y - bird.radius <= 0) {
+        bird.y = bird.radius;
+        bird.vy = 0;
+      }
+
+      // Spawn pipes
+      spawnTimer += dt * 60;
+      if (spawnTimer > 105) {
+        spawnPipe();
+        spawnTimer = 0;
+      }
+
+      // Update pipes
+      for (let i = pipes.length - 1; i >= 0; i--) {
+        const p = pipes[i];
+        p.x -= pipeSpeed;
+
+        // Collision Check
+        // AABB box vs Circle
+        const inX = (bird.x + bird.radius > p.x && bird.x - bird.radius < p.x + pipeWidth);
+        const hitTop = (bird.y - bird.radius < p.top);
+        const hitBottom = (bird.y + bird.radius > p.bottom);
+
+        if (inX && (hitTop || hitBottom)) {
+          gameOver();
+          return;
+        }
+
+        // Score check
+        if (!p.passed && p.x + pipeWidth < bird.x) {
+          p.passed = true;
+          score++;
+          document.getElementById('scoreVal').innerText = score;
+          sound.playScore();
+        }
+
+        // Remove offscreen
+        if (p.x + pipeWidth < -10) {
+          pipes.splice(i, 1);
+        }
+      }
+
+      // Clouds
+      for (let c of clouds) {
+        c.x -= c.speed;
+        if (c.x < -100) c.x = canvas.width + 50;
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Sky Background
+      ctx.fillStyle = '#70c5ce';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Clouds
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      for (let c of clouds) {
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.size, 0, Math.PI * 2);
+        ctx.arc(c.x + c.size * 0.7, c.y - 10, c.size * 0.8, 0, Math.PI * 2);
+        ctx.arc(c.x + c.size * 1.4, c.y, c.size * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw Pipes
+      for (let p of pipes) {
+        // Top Pipe
+        ctx.fillStyle = '#73be2e';
+        ctx.strokeStyle = '#53801b';
+        ctx.lineWidth = 3;
+
+        ctx.fillRect(p.x, 0, pipeWidth, p.top);
+        ctx.strokeRect(p.x, 0, pipeWidth, p.top);
+        // Top Pipe Rim
+        ctx.fillRect(p.x - 4, p.top - 24, pipeWidth + 8, 24);
+        ctx.strokeRect(p.x - 4, p.top - 24, pipeWidth + 8, 24);
+
+        // Bottom Pipe
+        const bHeight = canvas.height - p.bottom;
+        ctx.fillRect(p.x, p.bottom, pipeWidth, bHeight);
+        ctx.strokeRect(p.x, p.bottom, pipeWidth, bHeight);
+        // Bottom Pipe Rim
+        ctx.fillRect(p.x - 4, p.bottom, pipeWidth + 8, 24);
+        ctx.strokeRect(p.x - 4, p.bottom, pipeWidth + 8, 24);
+      }
+
+      // Ground
+      ctx.fillStyle = '#ded895';
+      ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+      ctx.fillStyle = '#73bf2e';
+      ctx.fillRect(0, canvas.height - 40, canvas.width, 10);
+      ctx.strokeStyle = '#53801b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0, canvas.height - 40, canvas.width, 10);
+
+      // Bird
+      ctx.save();
+      ctx.translate(bird.x, bird.y);
+      ctx.rotate(bird.rotation);
+
+      // Body
+      ctx.fillStyle = '#f1c40f';
+      ctx.strokeStyle = '#d68910';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, bird.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Wing
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.ellipse(-6, 2, 7, 4, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Eye
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(8, -6, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(10, -6, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Beak
+      ctx.fillStyle = '#e67e22';
+      ctx.beginPath();
+      ctx.moveTo(14, -2);
+      ctx.lineTo(24, 2);
+      ctx.lineTo(14, 6);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function startGame() {
+      sound.init();
+      score = 0;
+      bird.y = 250;
+      bird.vy = 0;
+      bird.rotation = 0;
+      pipes = [];
+      spawnTimer = 0;
+
+      document.getElementById('scoreVal').innerText = '0';
+      document.getElementById('startModal').classList.add('hidden');
+      document.getElementById('gameOverModal').classList.add('hidden');
+      state = 'PLAYING';
+    }
+
+    function gameOver() {
+      state = 'GAMEOVER';
+      sound.playHit();
+
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('sonsuz_kosu_high', highScore.toString());
+        document.getElementById('highScoreVal').innerText = highScore;
+      }
+
+      document.getElementById('finalScore').innerText = score;
+      document.getElementById('finalHighScore').innerText = highScore;
+      document.getElementById('gameOverModal').classList.remove('hidden');
+    }
+
+    document.getElementById('btnStart').addEventListener('click', startGame);
+    document.getElementById('btnRestart').addEventListener('click', startGame);
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

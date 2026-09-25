@@ -1,0 +1,30 @@
+{
+  "id": "TASK-005",
+  "title": "Implement Scoring System and LocalStorage High Score Table",
+  "description": "Implement a score tracker that increments as the player successfully passes pipes, and persists the highest score locally using browser LocalStorage.",
+  "type": "implementation",
+  "priority": "medium",
+  "complexity": "low",
+  "status": "COMPLETED",
+  "dependencies": [
+    "TASK-004"
+  ],
+  "files": [
+    "src/js/score.js",
+    "tests/test_score.py"
+  ],
+  "acceptanceCriteria": [
+    "Score increments by 1 for each successfully bypassed pipe obstacle",
+    "High score updates and persists across sessions using LocalStorage API",
+    "Python unit tests verify scoring increments and high score sorting logic"
+  ],
+  "assignedAgent": "Worker",
+  "assignedModel": "gemini-flash-lite-latest",
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": "All tests passed successfully.",
+  "reviewFeedback": "The implementation correctly satisfies all acceptance criteria, adheres to immutability and modularity principles, handles LocalStorage exceptions safely, and passes all associated test suites.",
+  "lastError": null
+}

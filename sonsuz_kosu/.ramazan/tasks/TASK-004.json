@@ -1,0 +1,31 @@
+{
+  "id": "TASK-004",
+  "title": "Implement Collision Detection and Game State Manager",
+  "description": "Implement AABB (Axis-Aligned Bounding Box) collision detection between the player and pipes, or canvas boundaries. Add state management for 'START', 'PLAYING', and 'GAME_OVER'.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "COMPLETED",
+  "dependencies": [
+    "TASK-002",
+    "TASK-003"
+  ],
+  "files": [
+    "src/js/collision.js",
+    "tests/test_collision.py"
+  ],
+  "acceptanceCriteria": [
+    "Game state transitions correctly from START to PLAYING on first touch, and to GAME_OVER upon collision",
+    "Collision detection accurately identifies intersections between player bounding box and pipe bounding boxes",
+    "Unit tests pass 100% assertions for edge-case collision scenarios"
+  ],
+  "assignedAgent": "Worker",
+  "assignedModel": "gemini-flash-lite-latest",
+  "retryCount": 1,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": "All tests passed successfully.",
+  "reviewFeedback": "The collision detection and game state manager implementation is robust, adheres to Clean Modular Code and Immutability principles, and all unit tests pass successfully.",
+  "lastError": null
+}
