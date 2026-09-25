@@ -60,6 +60,13 @@ class TestEngine:
             stdout = res.stdout or ""
             stderr = res.stderr or ""
 
+            # Pytest exitcode 5 means "No tests were collected".
+            # For frontend / web projects where no python test files exist:
+            if res.returncode == 5:
+                has_py_tests = any(self.root_dir.glob("tests/test_*.py")) or any(self.root_dir.glob("test_*.py"))
+                if not has_py_tests:
+                    passed = True
+
             # Basic parsing of test counts from pytest or standard runners
             failures = 0
             errors = 0

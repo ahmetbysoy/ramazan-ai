@@ -92,7 +92,26 @@ class RamazanConfig(StrictBaseModel):
                     return cls.model_validate(data)
             except Exception:
                 return cls()
-        return cls()
+
+        # Check global user configuration at ~/.ramazan/config.json
+        user_global_cfg = Path.home() / ".ramazan" / "config.json"
+        if user_global_cfg.exists() and user_global_cfg != config_path:
+            try:
+                with open(user_global_cfg, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return cls.model_validate(data)
+            except Exception:
+                pass
+
+        # Auto-map from environment variables if present
+        cfg = cls()
+        if os.environ.get("GEMINI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"):
+            try:
+                from ramazan.llm.key_detector import SmartKeyDetector
+                return SmartKeyDetector.auto_map_providers({}, cfg)
+            except Exception:
+                return cfg
+        return cfg
 
     @classmethod
     def load_strict(cls, root_dir: Optional[Path] = None) -> "RamazanConfig":

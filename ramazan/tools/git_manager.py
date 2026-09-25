@@ -27,7 +27,11 @@ class GitManager:
             return None
         if self._repo is None:
             try:
-                self._repo = git.Repo(self.repo_dir, search_parent_directories=True)
+                git_dir = self.repo_dir / ".git"
+                if git_dir.exists():
+                    self._repo = git.Repo(self.repo_dir)
+                else:
+                    self._repo = git.Repo(self.repo_dir, search_parent_directories=True)
             except git.InvalidGitRepositoryError:
                 self._repo = None
         return self._repo
@@ -35,7 +39,8 @@ class GitManager:
     def init_if_needed(self) -> bool:
         if not HAS_GITPYTHON or git is None:
             return False
-        if self.get_repo() is None:
+        git_dir = self.repo_dir / ".git"
+        if not git_dir.exists():
             try:
                 self._repo = git.Repo.init(self.repo_dir)
                 logger.info(f"Initialized new Git repository at {self.repo_dir}")

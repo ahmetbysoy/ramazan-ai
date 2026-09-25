@@ -434,6 +434,8 @@ def plan(
     """
     Break down requirements into deterministic tasks using the Orchestrator Agent.
     """
+    if not (Path.cwd() / ".ramazan").exists():
+        init()
     root_dir = find_project_root()
     config = RamazanConfig.load(root_dir)
     orchestrator = Orchestrator(root_dir, config, use_mock_llm=use_mock)
@@ -478,6 +480,8 @@ def start_project(
     """
     All-in-one command: Plan and execute a software engineering project end-to-end.
     """
+    if not (Path.cwd() / ".ramazan").exists():
+        init()
     root_dir = find_project_root()
     config = RamazanConfig.load(root_dir)
     orchestrator = Orchestrator(root_dir, config, use_mock_llm=mock)
@@ -680,6 +684,10 @@ def configure(
             console.print("[yellow]Could not automatically identify provider from key prefix. You can configure manually in .ramazan/config.json[/yellow]")
 
     config.save(root_dir)
+    try:
+        config.save(Path.home())
+    except Exception:
+        pass
     console.print("[green]Configuration saved to .ramazan/config.json successfully.[/green]")
 
 
