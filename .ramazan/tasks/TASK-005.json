@@ -1,0 +1,27 @@
+{
+  "id": "TASK-005",
+  "title": "Core Domain Models and Schema Validation",
+  "description": "Implement baseline domain data structures and input validation logic.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "low",
+  "status": "PENDING",
+  "dependencies": [],
+  "files": [
+    "src/domain/models.py"
+  ],
+  "acceptanceCriteria": [
+    "Domain model defined with attributes.",
+    "Validation methods implemented.",
+    "Unit tests verify valid and invalid inputs."
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "NOT_REVIEWED",
+  "testStatus": "NOT_RUN",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}

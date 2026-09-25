@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
@@ -20,8 +21,31 @@ class LLMResponse(BaseModel):
     raw: Optional[Dict[str, Any]] = None
 
 
+def _auto_load_env_keys():
+    """Load API keys from local or home directory .env files if not set in os.environ."""
+    candidates = [
+        Path.cwd() / ".ramazan" / ".env",
+        Path.cwd() / ".env",
+        Path.home() / ".ramazan" / ".env",
+        Path.home() / ".env",
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                for line in p.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k, v = k.strip(), v.strip().strip("'\"")
+                        if k and v and k not in os.environ:
+                            os.environ[k] = v
+            except Exception:
+                pass
+
+
 class LLMClient:
     def __init__(self, use_mock: Optional[bool] = None):
+        _auto_load_env_keys()
         # If explicitly requested or no API keys found in environment, enable mock/simulated responses
         has_keys = bool(
             os.environ.get("ANTHROPIC_API_KEY") or

@@ -1,7 +1,7 @@
 # Proje Gereksinimleri
 
 ## Kullanıcı Talebi
-yeni bir ecommerce sepet servisi tasarla
+Hesap makinesi yap
 
 ## Tarih
-2026-09-25T18:12:30.888252+00:00
+2026-09-25T23:31:57.427628+00:00

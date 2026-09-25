@@ -246,7 +246,7 @@ def status():
     table.add_column("Priority", style="yellow")
     table.add_column("Complexity", style="magenta")
     table.add_column("Dependencies", style="blue")
-    table.add_column("Status", style="bold")
+    table.add_column("Status", style="bold", no_wrap=True)
     table.add_column("Retries", justify="right")
 
     for t_id, task in task_engine.tasks.items():
@@ -699,8 +699,21 @@ def launch_ui(
     """
     Launch the interactive RAMAZAN AI Web Dashboard.
     """
-    import uvicorn
-    from ramazan.ui.server import create_app
+    try:
+        import uvicorn
+        from ramazan.ui.server import create_app
+    except ImportError:
+        console.print(Panel(
+            "[bold red]Web Dashboard dependencies missing![/bold red]\n\n"
+            "FastAPI or Uvicorn is not installed in this environment.\n\n"
+            "Install with:\n"
+            "  [bold yellow]pip install fastapi uvicorn[/bold yellow]\n"
+            "or in Termux / Ubuntu:\n"
+            "  [bold yellow]pip install --break-system-packages fastapi uvicorn[/bold yellow]",
+            title="RAMAZAN AI - Missing Dependencies",
+            border_style="red"
+        ))
+        raise Exit(1)
 
     root_dir = find_project_root()
     web_app = create_app(root_dir)
