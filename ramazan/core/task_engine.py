@@ -109,6 +109,58 @@ class TaskEngine:
         except Exception:
             return []
 
+    def next_task_id(self) -> str:
+        nums = []
+        for t_id in self.tasks:
+            m = re.match(r"TASK-(\d+)", t_id)
+            if m:
+                nums.append(int(m.group(1)))
+        next_num = max(nums) + 1 if nums else 1
+        return f"TASK-{next_num:03d}"
+
+    def locked_files(self) -> Set[str]:
+        """
+        Section 25 & Spec: Active tasks lock their target files to prevent concurrent collision.
+        """
+        active_statuses = {
+            TaskStatus.ASSIGNED.value,
+            TaskStatus.IN_PROGRESS.value,
+            TaskStatus.IMPLEMENTED.value,
+            TaskStatus.TESTING.value,
+            TaskStatus.REVIEWING.value,
+            TaskStatus.RETRYING.value,
+        }
+        return {f for t in self.tasks.values() if t.status in active_statuses for f in t.files}
+
+    def reset_task(self, task_id: str) -> Task:
+        """
+        Section 23 & Spec: Resets an ESCALATED, BLOCKED, or FAILED task back to READY
+        following human-in-the-loop intervention.
+        """
+        task = self.tasks.get(task_id)
+        if not task:
+            raise KeyError(f"Task {task_id} not found.")
+
+        task.status = TaskStatus.READY.value
+        task.retryCount = 0
+        task.lastError = None
+        task.testStatus = "NOT_RUN"
+        task.reviewStatus = "NOT_REVIEWED"
+        self.save_task(task)
+        logger.info(f"Task {task_id} has been reset to READY after human review.")
+        return task
+
+    def unresolved_tasks(self, completed_task_ids: List[str]) -> List[Task]:
+        """
+        Section 49 & Spec: Tasks that can never become READY due to missing or blocked dependencies.
+        """
+        completed_set = set(completed_task_ids)
+        return [
+            t for t in self.tasks.values()
+            if t.status in [TaskStatus.PENDING.value, TaskStatus.BLOCKED.value, TaskStatus.ESCALATED.value]
+            and any(d not in completed_set for d in t.dependencies)
+        ]
+
     def get_ready_tasks(self, completed_task_ids: List[str]) -> List[Task]:
         """
         Returns all tasks whose dependencies are fully met and that are PENDING or READY.
@@ -116,6 +168,7 @@ class TaskEngine:
         """
         ready_tasks = []
         completed_set = set(completed_task_ids)
+        locked = self.locked_files()
 
         for task_id, task in self.tasks.items():
             if task.status in [TaskStatus.COMPLETED.value, TaskStatus.BLOCKED.value, TaskStatus.ESCALATED.value]:
@@ -125,6 +178,10 @@ class TaskEngine:
             deps_satisfied = all(dep in completed_set for dep in task.dependencies)
 
             if deps_satisfied and task.status in [TaskStatus.PENDING.value, TaskStatus.READY.value, TaskStatus.RETRYING.value]:
+                # Skip task if its files intersect with currently locked files of other active tasks
+                if task.status in [TaskStatus.PENDING.value, TaskStatus.READY.value] and set(task.files) & locked:
+                    continue
+
                 if task.status == TaskStatus.PENDING.value:
                     task.status = TaskStatus.READY.value
                     self.save_task(task)

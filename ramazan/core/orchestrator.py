@@ -23,7 +23,7 @@ from ramazan.tools.test_runner import TestEngine, TestExecutionResult
 from ramazan.tools.git_manager import GitManager
 from ramazan.llm.client import LLMClient
 from ramazan.llm.cost_tracker import CostTracker
-from ramazan.agents.worker_agent import WorkerAgent, WorkerOutput
+from ramazan.agents.worker_agent import WorkerAgent, WorkerOutput, ScopeViolationError, is_test_path
 from ramazan.agents.reviewer_agent import ReviewerAgent
 from ramazan.agents.architect_agent import ArchitectAgent
 from ramazan.audit.final_audit import FinalAuditor
@@ -110,6 +110,7 @@ class Orchestrator:
                 if self.task_engine.has_pending_tasks(state.completedTasks):
                     msg = "Pending tasks exist but none are ready. Pipeline blocked due to unmet dependencies or failures."
                     logger.warning(msg)
+                    self.blocked_report()
                     self.state_manager.mark_blocked()
                     return OrchestrationResult(False, msg, state)
                 else:
@@ -121,6 +122,7 @@ class Orchestrator:
             if not task_success and task.status == TaskStatus.ESCALATED.value:
                 msg = f"Task {task.id} escalated. Human intervention or revised plan required."
                 logger.error(msg)
+                self.blocked_report()
                 self.state_manager.mark_blocked()
                 return OrchestrationResult(False, msg, self.state_manager.get_state())
 
@@ -140,6 +142,25 @@ class Orchestrator:
             self.state_manager.mark_blocked()
             logger.error("PROJECT BLOCKED: Final Audit failed quality gates.")
             return OrchestrationResult(False, f"Project blocked on final audit: {audit_report.summary}", self.state_manager.get_state())
+
+    def blocked_report(self) -> str:
+        """
+        Section 49 & Spec: Generates .ramazan/logs/PROJECT_BLOCKED.md detailing
+        tasks that can never become READY.
+        """
+        logs_dir = self.root_dir / ".ramazan" / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        lines = ["# PROJECT BLOCKED", "", "## Tasks that cannot become READY:"]
+        state = self.state_manager.get_state()
+        for t in self.task_engine.unresolved_tasks(state.completedTasks):
+            missing = [d for d in t.dependencies if d not in state.completedTasks]
+            lines.append(f"- **`{t.id}`** ({t.title}) waits for unresolved dependencies: `{missing}`")
+        for t in self.task_engine.tasks.values():
+            if t.status == TaskStatus.ESCALATED.value:
+                lines.append(f"- **`{t.id}`** is ESCALATED (see `.ramazan/logs/ESCALATION-{t.id}.md`)")
+        report = "\n".join(lines)
+        (logs_dir / "PROJECT_BLOCKED.md").write_text(report, encoding="utf-8")
+        return report
 
     def _execute_task_pipeline(self, task: Task) -> bool:
         """
@@ -172,11 +193,14 @@ class Orchestrator:
         test_failure_context: Optional[str] = None
         review_feedback_context: Optional[str] = None
 
+        # Section 27: Initial snapshot of task target files before agent modification
+        snapshot = self.fs.snapshots.create_snapshot(task.files)
+
         while True:
             # Check budget limit
             if self.cost_tracker.is_budget_exceeded():
                 logger.critical("Aborting task execution: Budget exceeded.")
-                self.state_manager.block_task(task.id)
+                self._handle_circuit_breaker(task, "Budget limit exceeded.", snapshot=snapshot)
                 return False
 
             # 1. Build surgical context
@@ -188,7 +212,30 @@ class Orchestrator:
 
             # 2. Worker generates code and updates files under file locks
             logger.info(f"Delegating to Worker agent ({model_cfg.model}) for {task.id}")
-            worker_output = worker.execute_task(task, worker_prompt)
+            try:
+                worker_output = worker.execute_task(
+                    task=task,
+                    context_prompt=worker_prompt,
+                    strict_scope=self.config.system.strictScope
+                )
+                # Register any new files created by worker into snapshot
+                for mod in worker_output.fileModifications:
+                    if mod.path not in snapshot:
+                        snapshot[mod.path] = None
+                for tst in worker_output.tests:
+                    if tst.path not in snapshot:
+                        snapshot[tst.path] = None
+            except ScopeViolationError as sve:
+                logger.error(f"Scope violation in {task.id}: {sve}")
+                action = self.circuit_breaker.check(task, failure_reason=f"Scope violation: {sve}")
+                self.task_engine.save_task(task)
+                if action == CircuitBreakerAction.RETRY_WITH_FEEDBACK:
+                    review_feedback_context = f"SCOPE VIOLATION: {sve}. Stay strictly within allowed files: {task.files} and test files."
+                    continue
+                else:
+                    self._handle_circuit_breaker(task, str(sve), snapshot=snapshot)
+                    return False
+
             self.task_engine.update_task_status(task.id, TaskStatus.IMPLEMENTED.value)
 
             # 3. Test Engine verification (real test execution)
@@ -206,33 +253,40 @@ class Orchestrator:
                     test_failure_context = f"{test_result.summary}\n{test_result.stderr or test_result.stdout}"
                     continue
                 else:
-                    self._handle_circuit_breaker(task, test_result.summary)
+                    self._handle_circuit_breaker(task, test_result.summary, snapshot=snapshot)
                     return False
 
             logger.info(f"Tests PASSED for {task.id}.")
 
             # 4. Reviewer verification (Section 18 & 19)
-            self.task_engine.update_task_status(task.id, TaskStatus.REVIEWING.value)
-            reviewer_prompt = self.context_builder.build_reviewer_prompt(
-                task=task,
-                changes_summary=worker_output.explanation,
-                test_output=test_result.stdout or test_result.summary
-            )
-            review_result = reviewer.review_task(task, reviewer_prompt)
-            task.reviewStatus = review_result.status
-            task.reviewFeedback = review_result.summary
+            if self.config.system.reviewEnabled:
+                self.task_engine.update_task_status(task.id, TaskStatus.REVIEWING.value)
+                reviewer_prompt = self.context_builder.build_reviewer_prompt(
+                    task=task,
+                    changes_summary=worker_output.explanation,
+                    test_output=test_result.stdout or test_result.summary
+                )
+                review_result = reviewer.review_task(task, reviewer_prompt)
+                task.reviewStatus = review_result.status
+                task.reviewFeedback = review_result.summary
 
-            if not review_result.is_approved:
-                logger.warning(f"Reviewer REJECTED task {task.id}. Reason: {review_result.summary}")
-                action = self.circuit_breaker.check(task, failure_reason=f"Review rejection: {review_result.summary}")
-                self.task_engine.save_task(task)
+                if not review_result.is_approved:
+                    logger.warning(f"Reviewer REJECTED task {task.id}. Reason: {review_result.summary}")
+                    action = self.circuit_breaker.check(task, failure_reason=f"Review rejection: {review_result.summary}")
+                    self.task_engine.save_task(task)
 
-                if action == CircuitBreakerAction.RETRY_WITH_FEEDBACK:
-                    review_feedback_context = f"Reviewer Issues:\n" + "\n".join([f"- {i.description} (Fix: {i.requiredFix})" for i in review_result.issues])
-                    continue
-                else:
-                    self._handle_circuit_breaker(task, review_result.summary)
-                    return False
+                    if action == CircuitBreakerAction.RETRY_WITH_FEEDBACK:
+                        review_feedback_context = f"Reviewer Issues:\n" + "\n".join([f"- {i.description} (Fix: {i.requiredFix})" for i in review_result.issues])
+                        continue
+                    else:
+                        self._handle_circuit_breaker(task, review_result.summary, snapshot=snapshot)
+                        return False
+            else:
+                review_result = ReviewResult(
+                    status="APPROVED",
+                    severity="LOW",
+                    summary="Review skipped as reviewEnabled is false."
+                )
 
             # APPROVED!
             self.task_engine.update_task_status(task.id, TaskStatus.APPROVED.value)
@@ -259,16 +313,47 @@ class Orchestrator:
         logger.info(f"Task {task.id} successfully completed and committed.")
         return True
 
-    def _handle_circuit_breaker(self, task: Task, failure_reason: str):
+    def _handle_circuit_breaker(self, task: Task, failure_reason: str, snapshot: Optional[Dict[str, Optional[str]]] = None):
+        """
+        Section 21, 22, 23 & Spec: Escalates task, atomically rolls back uncommitted changes,
+        and generates comprehensive human escalation report.
+        """
+        if snapshot:
+            logger.info(f"Rolling back agent modifications for {task.id} to preserve working tree.")
+            self.fs.snapshots.restore_snapshot(snapshot)
+
         escalation = self.circuit_breaker.generate_escalation_report(task, failure_reason)
         escalation_file = self.root_dir / ".ramazan" / f"ESCALATION_{task.id}.json"
         with open(escalation_file, "w", encoding="utf-8") as f:
             f.write(escalation.model_dump_json(indent=2))
 
+        # Also write human-readable Markdown report in .ramazan/logs/
+        logs_dir = self.root_dir / ".ramazan" / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        md_report = f"""# USER INTERVENTION REQUIRED
+**Task:** `{task.id}` — {task.title}
+**Attempts:** {task.retryCount}/{task.maxRetries}
+**Status:** `ESCALATED`
+
+## Last Failure
+```
+{failure_reason[:3000]}
+```
+
+## Actionable Resolution Options
+- **Option A (Change Approach):** Rewrite task with an alternative design or break down into smaller sub-tasks (new task / ADR).
+- **Option B (Switch Model):** Reconfigure the worker model in `.ramazan/config.json` and run again.
+- **Option C (Manual Fix):** Resolve the issue manually in code, then run `ramazan task reset {task.id}` or tap "Sıfırla" in the Web UI to return the task to READY.
+
+## Recommendation
+Do not proceed automatically. Agent modifications were rolled back cleanly to preserve repository integrity.
+"""
+        (logs_dir / f"ESCALATION-{task.id}.md").write_text(md_report, encoding="utf-8")
+
         self.task_engine.update_task_status(task.id, TaskStatus.ESCALATED.value)
         self.state_manager.block_task(task.id)
         logger.critical(
-            f"Escalation logged to {escalation_file.name}. Task {task.id} is marked ESCALATED."
+            f"Escalation logged to {escalation_file.name} and logs/ESCALATION-{task.id}.md. Task {task.id} is marked ESCALATED."
         )
 
     def _create_task_memory(

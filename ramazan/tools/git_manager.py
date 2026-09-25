@@ -6,7 +6,13 @@ Conforms to Sections 26 & 27 of specification.
 import logging
 from pathlib import Path
 from typing import List, Optional
-import git
+
+try:
+    import git
+    HAS_GITPYTHON = True
+except ImportError:
+    git = None
+    HAS_GITPYTHON = False
 
 logger = logging.getLogger("ramazan.git")
 
@@ -14,9 +20,11 @@ logger = logging.getLogger("ramazan.git")
 class GitManager:
     def __init__(self, repo_dir: Optional[Path] = None):
         self.repo_dir = (repo_dir or Path.cwd()).resolve()
-        self._repo: Optional[git.Repo] = None
+        self._repo: Optional[object] = None
 
-    def get_repo(self) -> Optional[git.Repo]:
+    def get_repo(self) -> Optional[object]:
+        if not HAS_GITPYTHON or git is None:
+            return None
         if self._repo is None:
             try:
                 self._repo = git.Repo(self.repo_dir, search_parent_directories=True)
@@ -25,6 +33,8 @@ class GitManager:
         return self._repo
 
     def init_if_needed(self) -> bool:
+        if not HAS_GITPYTHON or git is None:
+            return False
         if self.get_repo() is None:
             try:
                 self._repo = git.Repo.init(self.repo_dir)

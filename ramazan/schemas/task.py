@@ -83,3 +83,4 @@ class Task(BaseModel):
     testStatus: str = Field(default="NOT_RUN", description="Status of automated tests")
     testOutput: Optional[str] = Field(default=None, description="Latest test stdout/stderr")
     reviewFeedback: Optional[str] = Field(default=None, description="Latest reviewer notes")
+    lastError: Optional[str] = Field(default=None, description="Last recorded failure or error message")

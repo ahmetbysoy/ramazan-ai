@@ -150,7 +150,25 @@ class LLMClient:
             file_mods = []
             test_mods = []
 
-            if "src/domain/models.py" in prompt or "TASK-001" in prompt:
+            # Check if prompt specifies explicit target files
+            files_found = re.findall(r"### File:\s*([^\n\r]+)", prompt)
+            if not files_found:
+                m = re.search(r"target files:\s*([^\n\r.]+)", prompt)
+                if m and m.group(1).strip():
+                    files_found = [f.strip() for f in m.group(1).split(",") if f.strip() and f.strip() != "Specified in task"]
+
+            if files_found and not any(f in ["src/domain/models.py", "src/domain/service.py", "src/domain/api.py"] for f in files_found):
+                for f in files_found:
+                    file_mods.append({
+                        "path": f,
+                        "content": f'"""Module {f}"""\n\ndef run():\n    return True\n'
+                    })
+                safe_name = files_found[0].replace("/", "_").replace(".py", "")
+                test_mods = [{
+                    "path": f"tests/test_{safe_name}.py",
+                    "content": f"import pytest\n\ndef test_{safe_name}():\n    assert True\n"
+                }]
+            elif "src/domain/models.py" in prompt or "TASK-001" in prompt:
                 file_mods.append({
                     "path": "src/domain/models.py",
                     "content": '''"""Core Domain Models"""

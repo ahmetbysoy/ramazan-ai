@@ -57,7 +57,7 @@ class ReviewerAgent(BaseAgent):
         result = self._parse_review_result(resp.content)
 
         # Save review to .ramazan/reviews/
-        self._save_review_record(task.id, result)
+        self._save_review_record(task.id, result, attempt=task.retryCount + 1)
         return result
 
     def _parse_review_result(self, content: str) -> ReviewResult:
@@ -90,10 +90,13 @@ class ReviewerAgent(BaseAgent):
                 ]
             )
 
-    def _save_review_record(self, task_id: str, result: ReviewResult):
+    def _save_review_record(self, task_id: str, result: ReviewResult, attempt: int = 1):
         review_dir = self.root_dir / ".ramazan" / "reviews"
         review_dir.mkdir(parents=True, exist_ok=True)
         review_file = review_dir / f"{task_id}.md"
+
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         issues_md = ""
         for i in result.issues:
@@ -103,16 +106,20 @@ class ReviewerAgent(BaseAgent):
         if not issues_md:
             issues_md = "_No issues found. Code meets acceptance criteria._\n"
 
-        content = f"""# Review for {task_id}
+        attempt_block = f"""## Attempt {attempt} — {ts}
 
 **Status:** `{result.status}`
 **Severity:** `{result.severity}`
 
-## Summary
+### Summary
 {result.summary}
 
-## Issues Identified
+### Issues Identified
 {issues_md}
 """
-        with open(review_file, "w", encoding="utf-8") as f:
-            f.write(content)
+        if not review_file.exists():
+            content = f"# Review History for {task_id}\n\n" + attempt_block
+            review_file.write_text(content, encoding="utf-8")
+        else:
+            with open(review_file, "a", encoding="utf-8") as f:
+                f.write("\n---\n\n" + attempt_block)

@@ -21,12 +21,18 @@ from ramazan.audit.final_audit import FinalAuditor
 from ramazan.tools.test_runner import TestEngine
 from ramazan.tools.git_manager import GitManager
 from ramazan.schemas.task import Task
+from ramazan.schemas.adr import ADRManager
 
 app = typer.Typer(
     name="ramazan",
     help="RAMAZAN AI - Multi-Agent Autonomous Software Engineering Orchestrator",
     add_completion=False,
 )
+task_app = typer.Typer(name="task", help="Task management and inspection commands")
+adr_app = typer.Typer(name="adr", help="Architecture Decision Record (ADR) commands")
+
+app.add_typer(task_app, name="task")
+app.add_typer(adr_app, name="adr")
 console = Console()
 
 
@@ -126,6 +132,166 @@ def status():
             f"[{st_color}]{task.status}[/{st_color}]",
             f"{task.retryCount}/{task.maxRetries}"
         )
+
+    console.print(table)
+
+
+# ---------------- TASK SUBCOMMANDS ----------------
+
+@task_app.command(name="add")
+def cmd_task_add(
+    title: str = typer.Argument(..., help="Task title"),
+    desc: str = typer.Option("", "--desc", "-d", help="Task description"),
+    task_type: str = typer.Option("implementation", "--type", "-t", help="Task type (implementation, bugfix, test, refactor, documentation)"),
+    priority: str = typer.Option("medium", "--priority", "-p", help="Priority (critical, high, medium, low)"),
+    complexity: str = typer.Option("medium", "--complexity", "-c", help="Complexity (low, medium, high, critical)"),
+    deps: Optional[str] = typer.Option(None, "--deps", help="Comma-separated dependency task IDs (e.g. TASK-001,TASK-002)"),
+    files: Optional[str] = typer.Option(None, "--files", help="Comma-separated file paths in scope"),
+    criteria: Optional[str] = typer.Option(None, "--criteria", help="Comma-separated acceptance criteria"),
+):
+    """
+    Create and register a new deterministic engineering task.
+    """
+    root_dir = find_project_root()
+    task_engine = TaskEngine(root_dir)
+    config = RamazanConfig.load(root_dir)
+
+    dependencies_list = [d.strip() for d in deps.split(",") if d.strip()] if deps else []
+    files_list = [f.strip() for f in files.split(",") if f.strip()] if files else []
+    criteria_list = [c.strip() for c in criteria.split(",") if c.strip()] if criteria else []
+
+    task_id = task_engine.next_task_id()
+    task = Task(
+        id=task_id,
+        title=title,
+        description=desc or title,
+        type=task_type,
+        priority=priority,
+        complexity=complexity,
+        dependencies=dependencies_list,
+        files=files_list,
+        acceptanceCriteria=criteria_list,
+        maxRetries=config.system.maxRetries,
+    )
+    task_engine.add_task(task)
+
+    state_mgr = StateManager(root_dir)
+    state_mgr.set_total_tasks(len(task_engine.tasks))
+
+    console.print(f"[bold green]Created task {task.id}:[/bold green] {task.title}")
+    if not task.acceptanceCriteria:
+        console.print("[yellow]Warning: Task has no measurable acceptance criteria (Section 11).[/yellow]")
+
+
+@task_app.command(name="list")
+def cmd_task_list():
+    """
+    List all tasks, states, dependencies, and retry counters.
+    """
+    status()
+
+
+@task_app.command(name="reset")
+def cmd_task_reset(
+    task_id: str = typer.Argument(..., help="Task ID to reset, e.g. TASK-001"),
+):
+    """
+    Section 23 & Spec: Reset an ESCALATED, BLOCKED, or FAILED task back to READY
+    after human-in-the-loop inspection or code resolution.
+    """
+    root_dir = find_project_root()
+    task_engine = TaskEngine(root_dir)
+    try:
+        task = task_engine.reset_task(task_id)
+        state_mgr = StateManager(root_dir)
+        state = state_mgr.load()
+        if task_id in state.blockedTasks:
+            state.blockedTasks.remove(task_id)
+        if task_id in state.failedTasks:
+            state.failedTasks.remove(task_id)
+        if state.status == "BLOCKED":
+            state.status = "IN_PROGRESS"
+        state_mgr.save()
+
+        console.print(Panel(
+            f"[bold green]Task {task.id} successfully reset to READY![/bold green]\n"
+            f"Title: {task.title}\n"
+            f"Retries reset to: 0\n"
+            f"Pipeline can now proceed with `ramazan step` or `ramazan run`.",
+            title="RAMAZAN AI - Task Reset",
+            border_style="green"
+        ))
+    except KeyError:
+        console.print(f"[bold red]Task '{task_id}' not found.[/bold red]")
+        raise typer.Exit(1)
+
+
+@app.command(name="reset")
+def alias_task_reset(
+    task_id: str = typer.Argument(..., help="Task ID to reset"),
+):
+    """
+    Quick alias to reset an ESCALATED task back to READY (ramazan reset TASK-XXX).
+    """
+    cmd_task_reset(task_id=task_id)
+
+
+# ---------------- ADR SUBCOMMANDS ----------------
+
+@adr_app.command(name="new")
+def cmd_adr_new(
+    decision: str = typer.Argument(..., help="Core architecture decision"),
+    context: str = typer.Option("", "--context", "-c", help="Context and problem motivation"),
+    alternatives: Optional[str] = typer.Option(None, "--alternatives", "-a", help="Comma-separated alternatives considered"),
+    reason: str = typer.Option("", "--reason", "-r", help="Reason for choosing this option"),
+    consequences: str = typer.Option("", "--consequences", help="Positive and negative trade-offs"),
+    title: str = typer.Option("", "--title", help="ADR Title (optional)"),
+):
+    """
+    Section 16: Create and append a new Architecture Decision Record (ADR).
+    Old ADRs are immutable and never deleted.
+    """
+    root_dir = find_project_root()
+    alts_list = [a.strip() for a in alternatives.split(",") if a.strip()] if alternatives else []
+    adr = ADRManager.create_adr(
+        root_dir=root_dir,
+        decision=decision,
+        context=context or "Architectural evolution requirement.",
+        alternatives=alts_list,
+        reason=reason or "Selected for optimal modularity and specification compliance.",
+        consequences=consequences or "Enhances determinism and system resilience.",
+        title=title or decision
+    )
+    console.print(Panel(
+        f"[bold green]ADR Recorded Successfully: {adr.id}[/bold green]\n"
+        f"Title: [cyan]{adr.title}[/cyan]\n"
+        f"Decision: {adr.decision}\n"
+        f"File: [yellow].ramazan/decisions/{adr.id}.md[/yellow]",
+        title="RAMAZAN AI - Architecture Decision",
+        border_style="green"
+    ))
+
+
+@adr_app.command(name="list")
+def cmd_adr_list():
+    """
+    List all recorded Architecture Decision Records (ADRs).
+    """
+    root_dir = find_project_root()
+    adrs = ADRManager.list_adrs(root_dir)
+    if not adrs:
+        console.print("[yellow]No ADRs recorded yet. Create one with `ramazan adr new ...`[/yellow]")
+        return
+
+    table = Table(title="Architecture Decision Records (ADRs)", show_lines=True)
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Title / Decision", style="white")
+    table.add_column("Reason", style="green")
+    table.add_column("Alternatives", style="magenta")
+
+    for adr in adrs:
+        alts = ", ".join(adr.alternatives) if adr.alternatives else "-"
+        table.add_row(adr.id, adr.title or adr.decision, adr.reason or "-", alts)
 
     console.print(table)
 

@@ -37,11 +37,14 @@ class SystemConfig(BaseModel):
     budgetWarningThreshold: float = 0.8
     autoGitCommit: bool = True
     humanInTheLoopOnCritical: bool = True
+    strictScope: bool = True  # Worker task.files dışına çıkarsa FAIL (Section 14 & 20)
+    reviewEnabled: bool = True  # Reviewer agent devrede mi
     logLevel: str = "INFO"
 
 
 class ToolsConfig(BaseModel):
     testCommand: str = "pytest -v"
+    buildCommand: Optional[str] = None
     lintCommand: str = "pytest -q"
     allowTerminal: bool = True
     forbiddenCommands: List[str] = Field(

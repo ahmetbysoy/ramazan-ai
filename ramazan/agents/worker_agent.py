@@ -31,6 +31,38 @@ class WorkerOutput(BaseModel):
     fileModifications: List[FileModification] = Field(default_factory=list)
     tests: List[FileModification] = Field(default_factory=list)
     potentialRisks: str = Field(default="None")
+    risks: List[str] = Field(default_factory=list)
+    proposals: List[str] = Field(default_factory=list)
+
+
+class ScopeViolationError(Exception):
+    pass
+
+
+def is_test_path(p: str) -> bool:
+    p = str(p).replace("\\", "/")
+    name = p.rsplit("/", 1)[-1]
+    return (
+        p.startswith(("tests/", "test/"))
+        or "/tests/" in p
+        or "/test/" in p
+        or name.startswith("test_")
+        or name.startswith("test")
+        or name.endswith(
+            (
+                "_test.py",
+                "test.py",
+                "_test.go",
+                "test.go",
+                ".test.ts",
+                ".test.tsx",
+                ".spec.ts",
+                ".test.js",
+                "Test.kt",
+                "Test.java",
+            )
+        )
+    )
 
 
 class WorkerAgent(BaseAgent):
@@ -51,10 +83,25 @@ class WorkerAgent(BaseAgent):
         self.root_dir = (root_dir or Path.cwd()).resolve()
         self.fs = FileSystemTools(self.root_dir)
 
+    def check_scope_violation(self, task: Task, file_paths: List[str], strict_scope: bool = True) -> Optional[str]:
+        if not strict_scope:
+            return None
+        # System-owned checks must strictly precede allowed checks
+        for f in file_paths:
+            norm = f.replace("\\", "/")
+            if norm.startswith(".ramazan/") or norm.startswith(".git/"):
+                return f"Path '{f}' is system-owned and cannot be modified by agents."
+        allowed = set(task.files)
+        bad = [f for f in file_paths if f not in allowed and not is_test_path(f)]
+        if bad:
+            return f"Files outside task scope: {bad}. Allowed: {sorted(allowed)} + test files."
+        return None
+
     def execute_task(
         self,
         task: Task,
         context_prompt: str,
+        strict_scope: bool = True,
     ) -> WorkerOutput:
         """
         Executes code generation and applies modifications to filesystem under file locks.
@@ -72,6 +119,12 @@ class WorkerAgent(BaseAgent):
 
             resp = self.call_llm(prompt=context_prompt, system_prompt=system_prompt, task_id=task.id)
             worker_output = self._parse_output(resp.content)
+
+            # Check strict scope
+            all_files = [m.path for m in worker_output.fileModifications] + [t.path for t in worker_output.tests]
+            violation = self.check_scope_violation(task, all_files, strict_scope=strict_scope)
+            if violation:
+                raise ScopeViolationError(violation)
 
             # Apply file modifications to disk
             for mod in worker_output.fileModifications:

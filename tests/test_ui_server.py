@@ -79,3 +79,30 @@ def test_ui_endpoints(tmp_path: Path):
     res_prev = client.get("/preview/cops_robbers_game.html")
     assert res_prev.status_code == 200
     assert "Hırsız Polis" in res_prev.text
+
+    # 10. Task Reset endpoint
+    res_reset = client.post("/api/task/TASK-005/reset")
+    assert res_reset.status_code == 200
+    reset_data = res_reset.json()
+    assert reset_data["success"] is True
+    assert reset_data["task"]["status"] == "READY"
+    assert reset_data["task"]["retryCount"] == 0
+
+    # 11. ADR API GET & POST
+    res_adr_post = client.post("/api/adrs", json={
+        "decision": "Use SQLite for lightweight local persistence",
+        "context": "Need simple zero-dependency local storage",
+        "alternatives": ["PostgreSQL", "JSON files"],
+        "reason": "SQLite requires no separate database daemon",
+        "consequences": "Single file storage",
+        "title": "ADR-001 Local Database"
+    })
+    assert res_adr_post.status_code == 200
+    adr_post_data = res_adr_post.json()
+    assert adr_post_data["success"] is True
+    assert adr_post_data["adr"]["id"] == "ADR-001"
+
+    res_adr_get = client.get("/api/adrs")
+    assert res_adr_get.status_code == 200
+    adr_get_data = res_adr_get.json()
+    assert len(adr_get_data["adrs"]) >= 1

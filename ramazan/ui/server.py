@@ -550,11 +550,57 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
         rev_file = proj_root / ".ramazan" / "reviews" / f"{task_id}.md"
         rev = rev_file.read_text(encoding="utf-8") if rev_file.exists() else None
 
+        esc_md = proj_root / ".ramazan" / "logs" / f"ESCALATION-{task_id}.md"
+        esc = esc_md.read_text(encoding="utf-8") if esc_md.exists() else None
+
         return {
             "task": task.model_dump(),
             "memory": mem,
             "review": rev,
+            "escalation": esc,
         }
+
+    @app.post("/api/task/{task_id}/reset")
+    def reset_task(task_id: str):
+        task_eng = TaskEngine(proj_root)
+        state_mgr = StateManager(proj_root)
+        try:
+            task = task_eng.reset_task(task_id)
+            state = state_mgr.load()
+            if task_id in state.blockedTasks:
+                state.blockedTasks.remove(task_id)
+            if task_id in state.failedTasks:
+                state.failedTasks.remove(task_id)
+            if state.status == "BLOCKED":
+                state.status = "IN_PROGRESS"
+            state_mgr.save()
+            return {"success": True, "task": task.model_dump(), "message": f"{task_id} başarıyla READY durumuna sıfırlandı."}
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Görev bulunamadı.")
+
+    @app.get("/api/adrs")
+    def get_adrs():
+        from ramazan.schemas.adr import ADRManager
+        adrs = ADRManager.list_adrs(proj_root)
+        return {"adrs": [a.model_dump() for a in adrs]}
+
+    @app.post("/api/adrs")
+    def post_adr(payload: dict = Body(...)):
+        from ramazan.schemas.adr import ADRManager
+        decision = payload.get("decision", "").strip()
+        context = payload.get("context", "").strip()
+        if not decision:
+            raise HTTPException(status_code=400, detail="Karar boş olamaz.")
+        adr = ADRManager.create_adr(
+            root_dir=proj_root,
+            decision=decision,
+            context=context,
+            alternatives=payload.get("alternatives", []),
+            reason=payload.get("reason", ""),
+            consequences=payload.get("consequences", ""),
+            title=payload.get("title", "")
+        )
+        return {"success": True, "adr": adr.model_dump()}
 
     @app.get("/api/architecture")
     def get_architecture():
@@ -1259,12 +1305,19 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
       }
       tasks.forEach(t => {
         const isDone = completed.includes(t.id) || t.status === 'COMPLETED';
-        const cardClass = isDone ? 'completed' : (t.status === 'IN_PROGRESS' ? 'in_progress' : 'pending');
-        const stColor = isDone ? 'var(--emerald)' : (t.status === 'IN_PROGRESS' ? 'var(--amber)' : 'var(--muted)');
+        const isEscalated = ['ESCALATED', 'FAILED', 'BLOCKED'].includes(t.status);
+        const cardClass = isDone ? 'completed' : (t.status === 'IN_PROGRESS' ? 'in_progress' : (isEscalated ? 'failed' : 'pending'));
+        const stColor = isDone ? 'var(--emerald)' : (t.status === 'IN_PROGRESS' ? 'var(--amber)' : (isEscalated ? 'var(--rose)' : 'var(--muted)'));
 
         const el = document.createElement('div');
         el.className = `task-item ${cardClass}`;
         el.onclick = () => openTaskDetails(t.id);
+
+        let resetBtn = '';
+        if (isEscalated) {
+          resetBtn = `<button class="chip-btn" style="background: var(--amber); color: #000; font-weight: 700; margin-top: 0.4rem; padding: 0.25rem 0.6rem;" onclick="resetTask('${t.id}', event)">🔄 Sıfırla (Reset)</button>`;
+        }
+
         el.innerHTML = `
           <div class="task-top">
             <span style="font-size: 0.75rem; font-weight: 800; color: var(--cyan);">${t.id}</span>
@@ -1272,9 +1325,28 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
           </div>
           <div class="task-title">${t.title}</div>
           <div style="font-size: 0.75rem; color: var(--muted);">${t.description}</div>
+          ${resetBtn}
         `;
         box.appendChild(el);
       });
+    }
+
+    async function resetTask(taskId, e) {
+      if (e) e.stopPropagation();
+      showToast("Görev sıfırlanıyor...");
+      try {
+        const res = await fetch(`/api/task/${taskId}/reset`, { method: 'POST' });
+        const d = await res.json();
+        if (d.success) {
+          showToast(`Görev ${taskId} READY olarak sıfırlandı!`);
+          closeModal();
+          refreshStatus();
+        } else {
+          showToast("Sıfırlanamadı.");
+        }
+      } catch (err) {
+        showToast("Hata oluştu.");
+      }
     }
 
     async function openTaskDetails(taskId) {
@@ -1292,6 +1364,13 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
             ${t.acceptanceCriteria.map(c => `<li>${c}</li>`).join('')}
           </ul>
         `;
+        if (data.escalation) {
+          html += `<div style="margin-top: 0.8rem; border: 1px solid var(--rose); padding: 0.6rem; border-radius: 8px; background: rgba(244, 63, 94, 0.1);">
+            <strong style="color: var(--rose);">⚠️ Human Escalation Raporu:</strong>
+            <pre style="background: #060a12; padding: 0.5rem; border-radius: 6px; font-size: 0.75rem; max-height: 140px; overflow: auto; margin-top: 0.4rem;">${data.escalation}</pre>
+            <button class="btn btn-emerald btn-block" style="margin-top: 0.6rem;" onclick="resetTask('${t.id}')">🔄 Görevi Sıfırla ve Devam Et (Reset to READY)</button>
+          </div>`;
+        }
         if (data.memory) {
           html += `<div style="margin-top: 0.8rem;"><strong>Hafıza Kaydı:</strong><pre style="background: #060a12; padding: 0.5rem; border-radius: 6px; font-size: 0.75rem; max-height: 140px; overflow: auto;">${data.memory}</pre></div>`;
         }
