@@ -245,11 +245,12 @@ class Orchestrator:
 
         # Commit to Git
         if self.config.system.autoGitCommit:
+            all_modified = list(set(task.files + [m.path for m in worker_output.fileModifications] + [t.path for t in worker_output.tests]))
             self.git_manager.commit_task(
                 task_id=task.id,
                 title=task.title,
                 task_type=task.type,
-                files=task.files
+                files=all_modified
             )
 
         # Mark completed in Task Engine & State Manager
