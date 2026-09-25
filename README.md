@@ -96,6 +96,8 @@ pytest -v
 | Komut | Açıklama |
 |---|---|
 | `ramazan init` | Mevcut dizinde `.ramazan` çalışma alanı yapısını ve git deposunu ilklendirir. |
+| `ramazan ui` / `ramazan web` | Kullanıcı dostu Web Arayüzünü (`http://0.0.0.0:8000`) başlatır. |
+| `ramazan configure` | Akıllı API anahtarı algılama ve otonomi modunu ayarlama sihirbazı. |
 | `ramazan status` | Proje durumunu, ilerleme yüzdesini, aktif görevleri ve görev tablosunu gösterir. |
 | `ramazan plan` | `requirements.md` içeriğini analiz ederek DAG tabanlı görev grafiği oluşturur. |
 | `ramazan run` | Tüm görevler tamamlanana veya bloklanana kadar ana orkestrasyon döngüsünü çalıştırır. |

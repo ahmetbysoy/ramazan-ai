@@ -325,6 +325,41 @@ def configure(
     console.print("[green]Configuration saved to .ramazan/config.json successfully.[/green]")
 
 
+@app.command(name="ui")
+def launch_ui(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host address"),
+    port: int = typer.Option(8000, "--port", "-p", help="Bind port number"),
+):
+    """
+    Launch the interactive RAMAZAN AI Web Dashboard.
+    """
+    import uvicorn
+    from ramazan.ui.server import create_app
+
+    root_dir = find_project_root()
+    web_app = create_app(root_dir)
+    console.print(Panel(
+        f"[bold green]Starting RAMAZAN AI Web Dashboard...[/bold green]\n"
+        f"URL: [bold cyan]http://{host}:{port}[/bold cyan]\n"
+        f"Binding: [yellow]{host}:{port}[/yellow]\n\n"
+        f"Press [bold red]Ctrl+C[/bold red] to stop server.",
+        title="RAMAZAN AI - Web UI",
+        border_style="green"
+    ))
+    uvicorn.run(web_app, host=host, port=port, log_level="info")
+
+
+@app.command(name="web")
+def launch_web(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host address"),
+    port: int = typer.Option(8000, "--port", "-p", help="Bind port number"),
+):
+    """
+    Alias for 'ramazan ui'.
+    """
+    launch_ui(host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
 
