@@ -36,8 +36,10 @@ class TestEngine:
         self.root_dir = (root_dir or Path.cwd()).resolve()
         self.default_command = default_command
 
-    def run_tests(self, command: Optional[str] = None, timeout: int = 120) -> TestExecutionResult:
+    def run_tests(self, command: Optional[str] = None, path: Optional[str] = None, timeout: int = 120) -> TestExecutionResult:
         cmd = command or self.default_command
+        if path:
+            cmd = f"{cmd} {path}"
         logger.info(f"Running Test Suite: {cmd}")
         start_t = time.time()
 

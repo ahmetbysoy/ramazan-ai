@@ -13,6 +13,17 @@ from ramazan.llm.errors import ConfigurationError, ModelCallError, is_retriable_
 
 logger = logging.getLogger("ramazan.llm")
 
+_last_gemini_call = 0.0
+
+
+def _throttle_gemini():
+    global _last_gemini_call
+    import time
+    elapsed = time.time() - _last_gemini_call
+    if elapsed < 4.0:
+        time.sleep(4.0 - elapsed)
+    _last_gemini_call = time.time()
+
 
 class LLMResponse(BaseModel):
     content: str = ""
@@ -80,6 +91,7 @@ class LLMClient:
 
             candidate_models = [litellm_model]
             if "gemini" in litellm_model:
+                _throttle_gemini()
                 for alt in ["gemini/gemini-flash-lite-latest", "gemini/gemini-3.5-flash-lite", "gemini/gemini-3.6-flash"]:
                     if alt not in candidate_models:
                         candidate_models.append(alt)
@@ -87,6 +99,8 @@ class LLMClient:
             last_err = None
             for cur_model in candidate_models:
                 try:
+                    if "gemini" in cur_model:
+                        _throttle_gemini()
                     resp = litellm.completion(
                         model=cur_model,
                         messages=messages,
@@ -94,6 +108,8 @@ class LLMClient:
                     )
 
                     content = resp.choices[0].message.content or ""
+                    if not isinstance(content, str):
+                        content = str(content)
                     usage = getattr(resp, "usage", None)
                     in_tok = getattr(usage, "prompt_tokens", 0) if usage else 0
                     out_tok = getattr(usage, "completion_tokens", 0) if usage else 0
@@ -147,10 +163,28 @@ class LLMClient:
             if tools:
                 kwargs["tools"] = tools
 
-            resp = litellm.completion(**kwargs)
+            import time
+            max_attempts = 3
+            resp = None
+            for attempt in range(max_attempts):
+                try:
+                    if "gemini" in litellm_model:
+                        _throttle_gemini()
+                    resp = litellm.completion(**kwargs)
+                    break
+                except Exception as e:
+                    err_msg = str(e).lower()
+                    if any(t in err_msg for t in ["429", "resource_exhausted", "quota", "rate limit"]) and attempt < max_attempts - 1:
+                        logger.warning(f"Rate limited by Gemini on turn, waiting 20s before retry (attempt {attempt+1}/{max_attempts})...")
+                        time.sleep(20)
+                        continue
+                    raise e
+
             choice = resp.choices[0]
             msg = choice.message
             content = msg.content or ""
+            if not isinstance(content, str):
+                content = str(content)
 
             tool_calls_data = None
             if hasattr(msg, "tool_calls") and msg.tool_calls:

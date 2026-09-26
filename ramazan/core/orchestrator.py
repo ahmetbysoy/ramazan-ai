@@ -69,7 +69,12 @@ class Orchestrator:
         self.test_engine = TestEngine(self.root_dir, default_command=self.config.tools.testCommand)
         self.git_manager = GitManager(self.root_dir)
         from ramazan.audit.final_audit import FinalAuditor
-        self.final_auditor = FinalAuditor(self.root_dir, test_command=self.config.tools.testCommand)
+        self.final_auditor = FinalAuditor(
+            self.root_dir,
+            test_command=self.config.tools.testCommand,
+            lint_command=self.config.tools.lintCommand,
+            require_git=self.config.system.autoGitCommit
+        )
 
         # Specialized Agents
         self.architect_agent = ArchitectAgent(

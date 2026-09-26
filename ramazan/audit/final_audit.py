@@ -418,21 +418,21 @@ class GitStatusCheck(BaseCheck):
         self.require_git = require_git
 
     def run(self) -> CheckResult:
-        mgr = GitManager(self.root_dir)
-        repo = mgr.get_repo()
-        if not repo:
-            if self.require_git:
-                return CheckResult(
-                    name=self.name,
-                    status="SKIPPED",
-                    details="Not a valid git repository or git unavailable.",
-                    evidence="GitManager returned null repo"
-                )
+        if not self.require_git:
             return CheckResult(
                 name=self.name,
                 status="PASS",
                 details="Non-git or offline directory mode; git check bypassed.",
                 evidence="require_git=False"
+            )
+        mgr = GitManager(self.root_dir)
+        repo = mgr.get_repo()
+        if not repo:
+            return CheckResult(
+                name=self.name,
+                status="SKIPPED",
+                details="Not a valid git repository or git unavailable.",
+                evidence="GitManager returned null repo"
             )
         try:
             dirty = repo.is_dirty(untracked_files=False)

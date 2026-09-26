@@ -221,6 +221,7 @@ class WorkerAgent(BaseAgent):
             logger.warning(f"Worker reached max_turns ({max_turns}) for {task.id}.")
             mods = [FileModification(path=f, content=(self.root_dir / f).read_text(encoding="utf-8", errors="replace")) for f in dispatcher.modified_files if (self.root_dir / f).exists()]
             tests = [FileModification(path=t, content=(self.root_dir / t).read_text(encoding="utf-8", errors="replace")) for t in dispatcher.test_files if (self.root_dir / t).exists()]
+            self._ensure_init_py([m.path for m in mods] + [t.path for t in tests])
             return WorkerOutput(
                 explanation=f"Worker completed {max_turns} turns with tool modifications.",
                 fileModifications=mods,

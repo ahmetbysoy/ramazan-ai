@@ -2,7 +2,7 @@
   "system": {
     "name": "RAMAZAN AI",
     "version": "1.0",
-    "autonomyMode": "step_by_step",
+    "autonomyMode": "fully_autonomous",
     "maxRetries": 3,
     "maxBudgetUsd": 20.0,
     "budgetWarningThreshold": 0.8,

@@ -6,7 +6,8 @@ from pathlib import Path
 from ramazan.ui.server import create_app
 
 
-def test_ui_endpoints(tmp_path: Path):
+def test_ui_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("RAMAZAN_MOCK", "1")
     app = create_app(root_dir=tmp_path)
     client = TestClient(app)
 
