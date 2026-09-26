@@ -242,15 +242,11 @@ def scan_workspace_projects(ws_root: Path) -> List[Dict[str, Any]]:
             status = "HAZIR"
             title = d.name
 
-            # Friendly title formatting
+            # Dynamic title formatting
             if d == ws_root:
                 title = "Çalışma Alanı (Kök Dizin)"
-            elif d.name == "sonsuz_kosu":
-                title = "🏃 Sonsuz Koşu (Flappy Runner)"
-            elif d.name == "uzay_oyunu":
-                title = "🚀 Uzay Savaşı (Space Shooter)"
-            elif d.name == "demo_calc":
-                title = "🧮 Demo Hesap Makinesi"
+            else:
+                title = d.name.replace("_", " ").title()
 
             st_file = d / ".ramazan" / "state.json"
             if st_file.exists():
