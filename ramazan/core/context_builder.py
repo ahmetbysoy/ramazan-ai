@@ -80,7 +80,7 @@ CONSTRAINTS:
 1. Only modify files listed in target files: {', '.join(task.files) if task.files else 'Specified in task'}.
 2. Comply strictly with architecture rules.
 3. Write clean, robust, and verifiable code.
-4. Include unit tests or test updates for all new/modified logic. Always write Python unit tests (tests/test_*.py) to test functionality, classes, or HTML/JS structures so they pass in pytest.
+4. Include unit tests or test updates for all new/modified logic. Always write Python unit tests (tests/test_*.py) to test functionality, classes, or HTML/JS structures so they pass in pytest. For JS/HTML files, test them via file inspection (reading content with Path) or structure checks - NEVER Python 'import' a .js or .html file.
 5. Python Import Rules: The project root and src/ directory are in PYTHONPATH. Use absolute imports from root or src (e.g. `from src.domain.service import ...` or `from domain.service import ...`). Do not use bare `import service` without package path if the file is inside src/domain/.
 
 

@@ -271,7 +271,36 @@ class Orchestrator:
 
             # 3. Test Engine verification (real test execution)
             self.task_engine.update_task_status(task.id, TaskStatus.TESTING.value)
-            test_result = self.test_engine.run_tests()
+            
+            # Find task-specific test files
+            target_tests = [
+                f for f in task.files
+                if ("test" in f or f.startswith("tests/")) and f.endswith(".py") and (self.root_dir / f).exists()
+            ]
+            if not target_tests and hasattr(worker_output, "testFiles") and worker_output.testFiles:
+                target_tests = [
+                    tf.path for tf in worker_output.testFiles
+                    if tf.path.endswith(".py") and (self.root_dir / tf.path).exists()
+                ]
+            if not target_tests and hasattr(worker_output, "fileModifications") and worker_output.fileModifications:
+                target_tests = [
+                    m.path for m in worker_output.fileModifications
+                    if ("test" in m.path or m.path.startswith("tests/")) and m.path.endswith(".py") and (self.root_dir / m.path).exists()
+                ]
+
+            test_path_arg = " ".join(target_tests) if target_tests else None
+
+            # If running inside RAMAZAN repo itself, avoid running RAMAZAN's own framework tests for user project tasks
+            if not test_path_arg and (self.root_dir / "ramazan").exists():
+                framework_test_names = [
+                    "test_agent_tools.py", "test_config.py", "test_orchestrator.py",
+                    "test_router.py", "test_security.py", "test_ui_server.py", "test_worker_agent.py"
+                ]
+                ignores = " ".join([f"--ignore=tests/{fn}" for fn in framework_test_names if (self.root_dir / "tests" / fn).exists()])
+                test_result = self.test_engine.run_tests(path=ignores if ignores else None)
+            else:
+                test_result = self.test_engine.run_tests(path=test_path_arg)
+
             task.testStatus = "PASSED" if test_result.passed else "FAILED"
             task.testOutput = test_result.summary
 

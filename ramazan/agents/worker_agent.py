@@ -122,6 +122,10 @@ class WorkerAgent(BaseAgent):
                 "You have access to tools to read files, list directories, write files, apply patches, run shell commands, and run tests.\n"
                 "Always inspect existing code before modifying. Keep diffs minimal.\n"
                 "You MUST ensure corresponding automated unit tests exist or are created.\n"
+                "CRITICAL TESTING RULES:\n"
+                "- Write Python unit tests using pytest in tests/test_*.py.\n"
+                "- When testing frontend/web files (HTML, CSS, JavaScript like index.html, game.js), NEVER write Python 'import src.game' or 'from src.game import ...' because Python cannot import JavaScript files and will fail with ImportError.\n"
+                "- Instead, test frontend files by reading their content with Path(file).read_text() and asserting that expected functions, event listeners, canvas elements, or logic are defined.\n"
                 "Stay strictly within the allowed task files and test files.\n"
                 "When you are done, provide a final explanation of the changes made."
             )
