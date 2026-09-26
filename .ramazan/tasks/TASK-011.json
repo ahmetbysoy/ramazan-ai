@@ -1,0 +1,30 @@
+{
+  "id": "TASK-011",
+  "title": "Implement Collectibles and Scoring System",
+  "description": "Add collectible items (e.g., golden corn, seeds) that spawn in the game world, increase the player's score upon collection, and trigger fun visual feedback.",
+  "type": "implementation",
+  "priority": "medium",
+  "complexity": "low",
+  "status": "PENDING",
+  "dependencies": [
+    "TASK-010"
+  ],
+  "files": [
+    "src/js/collectibles.js",
+    "tests/test_scoring.py"
+  ],
+  "acceptanceCriteria": [
+    "Collectibles spawn and move synchronously with obstacles",
+    "Collecting an item increments the score counter and triggers an event",
+    "tests/test_scoring.py validates score increment logic and collection boundaries"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "NOT_REVIEWED",
+  "testStatus": "NOT_RUN",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}

@@ -1,7 +1,7 @@
 # Proje Gereksinimleri
 
 ## Kullanıcı Talebi
-Hesap makinesi yap
+tavuk oyunu yapalım. eğlenceli şeyler olsun
 
 ## Tarih
-2026-09-25T23:31:57.427628+00:00
+2026-09-26T07:30:02.733364+00:00

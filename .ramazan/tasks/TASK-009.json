@@ -1,0 +1,30 @@
+{
+  "id": "TASK-009",
+  "title": "Implement Chicken Player Physics and Controls",
+  "description": "Write JavaScript for the chicken entity including gravity, jumping/flapping mechanics, horizontal movement, and keyboard/touch event listeners.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "PENDING",
+  "dependencies": [
+    "TASK-008"
+  ],
+  "files": [
+    "src/js/chicken.js",
+    "tests/test_chicken_physics.py"
+  ],
+  "acceptanceCriteria": [
+    "Chicken object initializes with correct position, velocity, and dimensions",
+    "Jump and gravity calculations apply correct delta updates",
+    "tests/test_chicken_physics.py validates movement boundary conditions and input handling"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "NOT_REVIEWED",
+  "testStatus": "NOT_RUN",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}

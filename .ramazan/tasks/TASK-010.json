@@ -1,0 +1,30 @@
+{
+  "id": "TASK-010",
+  "title": "Implement Obstacle Generation and Collision Detection",
+  "description": "Develop the obstacle manager to spawn random farm-themed hazards (e.g., tractors, fences) and implement Axis-Aligned Bounding Box (AABB) collision detection between the chicken and obstacles.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "PENDING",
+  "dependencies": [
+    "TASK-009"
+  ],
+  "files": [
+    "src/js/obstacles.js",
+    "tests/test_collision.py"
+  ],
+  "acceptanceCriteria": [
+    "Obstacles spawn at regular intervals with randomized heights or gaps",
+    "AABB collision function accurately detects overlap between chicken and obstacle hitboxes",
+    "tests/test_collision.py verifies correct boolean outcomes for intersecting and non-intersecting rects"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "NOT_REVIEWED",
+  "testStatus": "NOT_RUN",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}

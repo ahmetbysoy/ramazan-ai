@@ -1,0 +1,31 @@
+{
+  "id": "TASK-012",
+  "title": "Implement Game Loop, State Management, and UI Integration",
+  "description": "Assemble the core game loop (requestAnimationFrame), handle game states (Start, Playing, Game Over), render graphics onto the canvas, and wire up HUD and restart buttons.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "PENDING",
+  "dependencies": [
+    "TASK-010",
+    "TASK-011"
+  ],
+  "files": [
+    "src/js/game.js",
+    "tests/test_game_loop.py"
+  ],
+  "acceptanceCriteria": [
+    "Game transitions correctly between Start, Playing, and Game Over states",
+    "Canvas renders background, chicken, obstacles, and score HUD cleanly at 60fps",
+    "tests/test_game_loop.py checks state machine transitions and reset behavior"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "NOT_REVIEWED",
+  "testStatus": "NOT_RUN",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}

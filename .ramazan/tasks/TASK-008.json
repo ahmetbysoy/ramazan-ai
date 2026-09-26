@@ -1,0 +1,29 @@
+{
+  "id": "TASK-008",
+  "title": "Initialize Project Structure and Core HTML/CSS Layout",
+  "description": "Create the base directory structure, index.html file with semantic HTML5 elements for the chicken game, and style.css for a responsive, fun game canvas and UI overlay.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "low",
+  "status": "READY",
+  "dependencies": [],
+  "files": [
+    "src/index.html",
+    "src/style.css",
+    "tests/test_html_structure.py"
+  ],
+  "acceptanceCriteria": [
+    "index.html contains a canvas element with id 'gameCanvas' and UI score panels",
+    "style.css properly centers the game container and applies a fun, vibrant color scheme",
+    "tests/test_html_structure.py passes successfully verifying DOM elements"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "NOT_REVIEWED",
+  "testStatus": "NOT_RUN",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}
