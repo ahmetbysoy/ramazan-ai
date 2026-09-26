@@ -1035,8 +1035,8 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
       animation: pulse 2.2s infinite ease-in-out;
     }
     @keyframes pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.04); }
+      0%, 100% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.3); }
+      50% { box-shadow: 0 0 18px rgba(16, 185, 129, 0.7); }
     }
     .status-badge {
       font-size: 0.68rem;
@@ -1657,8 +1657,8 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
         .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
         .replace(/\\*(.*?)\\*/g, '<em>$1</em>')
         .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.12);padding:0.15rem 0.35rem;border-radius:4px;font-size:0.86em;font-family:monospace;">$1</code>')
-        .replace(/\\n/g, '<br>')
-        .replace(/\n/g, '<br>');
+        .split('\\n').join('<br>')
+        .split(String.fromCharCode(10)).join('<br>');
     }
 
     function renderChatMessages(messages) {
