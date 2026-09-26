@@ -520,7 +520,7 @@ def scan_workspace_projects(ws_root: Path) -> List[Dict[str, Any]]:
 
             projects.append({
                 "name": title,
-                "folder": d.name if d != ws_root else "",
+                "folder": str(d.relative_to(ws_root)) if d != ws_root else "",
                 "path": str(d.resolve()),
                 "hasRamazan": has_ramazan,
                 "hasGame": game_path is not None,
@@ -530,23 +530,16 @@ def scan_workspace_projects(ws_root: Path) -> List[Dict[str, Any]]:
                 "status": status,
             })
 
-    # Sort projects: projects with games and tasks first, then root
-    projects.sort(key=lambda x: (not x["hasGame"], -x["taskCount"], x["name"]))
+    # Sort projects: root workspace first, then projects sorted by name
+    projects.sort(key=lambda x: (x["folder"] != "", x["name"]))
     return projects
 
 
 def create_app(root_dir: Optional[Path] = None) -> FastAPI:
     base_ws_root = (root_dir or find_project_root()).resolve()
 
-    # Active project root pointer (can be switched dynamically)
+    # Active project root pointer defaults to the meta-orchestrator factory
     active_root = {"path": base_ws_root}
-
-    # If sonsuz_kosu or uzay_oyunu exists and base_ws_root has no tasks, default to first rich project
-    detected = scan_workspace_projects(base_ws_root)
-    for p in detected:
-        if p["taskCount"] > 0 and p["folder"]:
-            active_root["path"] = Path(p["path"])
-            break
 
     app = FastAPI(title="RAMAZAN AI Mobile Dashboard", version="2.5.0")
 
@@ -707,9 +700,11 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
     # -----------------------------------------------------------------------
     # Playable Deliverable Direct Launchers
     # -----------------------------------------------------------------------
-    @app.get("/play/{project_name}")
+    @app.get("/play/{project_name:path}")
     def play_project(project_name: str):
         target_dir = (base_ws_root / project_name).resolve()
+        if not target_dir.exists():
+            target_dir = (base_ws_root / "projects" / project_name).resolve()
         if target_dir.exists() and target_dir.is_dir():
             game = _detect_game_file(target_dir)
             if game:
