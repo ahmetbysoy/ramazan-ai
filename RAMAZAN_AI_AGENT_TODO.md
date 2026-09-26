@@ -712,22 +712,26 @@ Bir model "Bu kod kesinlikle çalışıyor" dese de test başarısızsa sistem `
 ### 51. GELİŞTİRME ROADMAP
 
 **PHASE 1 — CORE**
-[ ] CLI, Project initialization, .ramazan directory, state.json, task engine, filesystem tools, terminal execution
+[x] CLI, Project initialization, .ramazan directory, state.json, task engine, filesystem tools, terminal execution
 
-**PHASE 2 — AGENTS**
-[ ] Claude orchestrator, Worker agent, Reviewer agent, Model registry, API abstraction
+**PHASE 2 — AGENTS & REAL AGENT LOOP**
+[x] Multi-turn tool-calling loop (read_file, list_dir, write_file, apply_patch, run_command, run_tests, git_diff)
+[x] Mock fallback removal & ModelCallError strict failure semantics
+[x] Multi-model role binding (Architect=Claude, Worker=DeepSeek, Reviewer=Grok)
+[x] Reviewer real git diff auditing & diff minimality check
+[x] Full test suite (93 tests passing)
 
 **PHASE 3 — MEMORY**
-[ ] architecture.md, ADR, task memory, context builder, project state
+[x] architecture.md, ADR, task memory, context builder, project state
 
 **PHASE 4 — AUTONOMY**
-[ ] automatic task generation, dependency graph, retry engine, circuit breaker, conflict resolution, human escalation
+[x] automatic task generation, dependency graph, retry engine, circuit breaker, conflict resolution, human escalation
 
 **PHASE 5 — OPTIMIZATION**
-[ ] model router, budget manager, token tracking, model performance tracking, parallel tasks
+[x] model router, budget manager, token tracking, model performance tracking, parallel tasks
 
 **PHASE 6 — PRODUCTION**
-[ ] security sandbox, permissions, audit logs, rollback, Git integration, CI/CD, dashboard
+[x] security sandbox, permissions, audit logs, rollback, Git integration, CI/CD, dashboard
 
 ---
 

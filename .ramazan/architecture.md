@@ -41,17 +41,19 @@ Never: `PROMPT ↓ CODE ↓ DONE`.
 ┌──────────────────────────▼─────────────────▼────────┐
 │                     Tools Layer                     │
 │  - File System Tools (Safe read/write/edit/lock)    │
+│  - Unified Patch Engine (Unified diff & hunks)      │
+│  - Agent Tool Dispatcher (Interactive tool loop)    │
 │  - Terminal Executor (Command policy enforcement)   │
 │  - Test Engine (Objective pytest/cargo/npm runner)  │
-│  - Git Manager (Atomic task commits, rollback)      │
+│  - Git Manager (Real git diff, commits, rollback)   │
 └─────────────────────────────────────────────────────┘
 ```
 
 ## 4. Agent Responsibilities
 - **Orchestrator**: Master planner, task lifecycle controller, circuit breaker enforcer, escalation manager.
-- **Architect**: System design, technology choices, module constraints, ADR authoring.
-- **Worker**: Generates atomic code patches and tests for assigned task. Never loads unnecessary repo context.
-- **Reviewer**: Strictly verifies correctness, security, performance, edge cases, and architectural compliance. Outputs structured JSON (`APPROVED` or `CHANGES_REQUIRED`).
+- **Architect**: System design, technology choices, module constraints, ADR authoring (Claude 3.7 Sonnet).
+- **Worker**: Multi-turn tool loop code generation, minimal diff patches and tests. Never touches files outside strict scope (DeepSeek-V3).
+- **Reviewer**: Strictly verifies correctness, security, performance, edge cases, real git diff minimality, and architectural compliance. Outputs structured JSON (Grok-2 / Claude).
 - **Test Engine**: Independent non-LLM execution of real test tools.
 
 ## 5. Security & Isolation
