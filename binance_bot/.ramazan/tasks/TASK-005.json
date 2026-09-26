@@ -1,0 +1,30 @@
+{
+  "id": "TASK-005",
+  "title": "Orderbook Wall Detection & Dynamic Trade Setup Calculator",
+  "description": "Parse live orderbook depth to identify liquidity clusters (support/resistance walls) and dynamically compute mark price, optimal entry, TP1, TP2, stop loss, and risk/reward ratios.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "high",
+  "status": "COMPLETED",
+  "dependencies": [
+    "TASK-002"
+  ],
+  "files": [
+    "src/orderbook.py",
+    "tests/test_orderbook.py"
+  ],
+  "acceptanceCriteria": [
+    "Orderbook parser correctly identifies top bid and ask walls from depth payloads",
+    "Trade setup calculator computes valid entry, dual take-profits, stop-loss, and risk/reward ratio",
+    "Unit tests pass with simulated orderbook depth snapshots"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}

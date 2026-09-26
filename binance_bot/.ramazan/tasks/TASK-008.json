@@ -1,0 +1,32 @@
+{
+  "id": "TASK-008",
+  "title": "Mobile-First Cyberpunk Dashboard UI",
+  "description": "Develop a zero-CDN, offline-resilient mobile-first dashboard featuring cyberpunk/fintech dark-mode aesthetics, responsive layout, ticker banner, active trade card, forecast grid, orderbook wall visualizer, and MEV radar.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "high",
+  "status": "COMPLETED",
+  "dependencies": [
+    "TASK-007"
+  ],
+  "files": [
+    "src/static/index.html",
+    "src/static/app.js",
+    "src/static/style.css",
+    "tests/test_dashboard.py"
+  ],
+  "acceptanceCriteria": [
+    "HTML/CSS/JS assets load entirely self-hosted with zero external CDN dependencies",
+    "Dashboard renders ticker, trade setup, timeframe forecast, orderbook walls, and MEV radar",
+    "Python unit tests verify HTML structure, element IDs, and asset bundling integrity"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}

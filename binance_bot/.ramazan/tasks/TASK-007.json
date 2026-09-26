@@ -1,0 +1,32 @@
+{
+  "id": "TASK-007",
+  "title": "Backend API & Real-Time Data Aggregator",
+  "description": "Create a lightweight backend orchestration layer (using WebSockets/FastAPI or equivalent internal pub-sub) that coordinates the WebSocket collector, predictor, orderbook analyzer, and MEV engine, broadcasting aggregated state to clients.",
+  "type": "implementation",
+  "priority": "high",
+  "complexity": "medium",
+  "status": "COMPLETED",
+  "dependencies": [
+    "TASK-002",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006"
+  ],
+  "files": [
+    "src/backend.py",
+    "tests/test_backend.py"
+  ],
+  "acceptanceCriteria": [
+    "Backend aggregates live feeds into a unified JSON telemetry state",
+    "Unit tests confirm message serialization and broadcast flow"
+  ],
+  "assignedAgent": null,
+  "assignedModel": null,
+  "retryCount": 0,
+  "maxRetries": 3,
+  "reviewStatus": "APPROVED",
+  "testStatus": "PASSED",
+  "testOutput": null,
+  "reviewFeedback": null,
+  "lastError": null
+}

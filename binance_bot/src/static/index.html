@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Binance Otonom WSS Analiz & MEV Bot</title>
+  <style>
+    :root {
+      --bg-dark: #0a0d14;
+      --card-bg: #121722;
+      --card-border: #1e2638;
+      --accent-cyan: #00f0ff;
+      --accent-green: #00e676;
+      --accent-red: #ff1744;
+      --accent-purple: #d500f9;
+      --accent-yellow: #ffd600;
+      --text-main: #f0f4f8;
+      --text-muted: #8b9bb4;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      line-height: 1.4;
+      padding-bottom: 70px;
+      overflow-x: hidden;
+    }
+
+    /* Top Ticker Header */
+    header {
+      background: rgba(18, 23, 34, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--card-border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-icon {
+      width: 24px;
+      height: 24px;
+      fill: var(--accent-cyan);
+    }
+
+    .brand h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--text-main);
+    }
+
+    .brand span {
+      color: var(--accent-cyan);
+      font-size: 0.75rem;
+      background: rgba(0, 240, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(0, 240, 255, 0.3);
+    }
+
+    .header-metrics {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.85rem;
+    }
+
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      color: var(--accent-green);
+      background: rgba(0, 230, 118, 0.1);
+      padding: 4px 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 230, 118, 0.3);
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.4; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.1); }
+      100% { opacity: 0.4; transform: scale(0.9); }
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Main Price & Primary Signal Card */
+    .hero-card {
+      background: linear-gradient(145deg, #161d2d, #111622);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    @media (min-width: 768px) {
+      .hero-card {
+        grid-template-columns: 1.2fr 1.8fr;
+      }
+    }
+
+    .price-box {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .symbol-label {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .live-price {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: var(--text-main);
+      font-family: monospace;
+      margin: 4px 0;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .price-currency {
+      font-size: 1rem;
+      color: var(--text-muted);
+    }
+
+    .signal-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 0.9rem;
+      letter-spacing: 0.5px;
+      width: fit-content;
+      margin-top: 6px;
+    }
+
+    .badge-bullish {
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--accent-green);
+      border: 1px solid var(--accent-green);
+    }
+
+    .badge-bearish {
+      background: rgba(255, 23, 68, 0.15);
+      color: var(--accent-red);
+      border: 1px solid var(--accent-red);
+    }
+
+    /* Setup Grid (Entry, TP1, TP2, SL) */
+    .setup-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      background: rgba(10, 13, 20, 0.5);
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .setup-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .setup-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .setup-value {
+      font-size: 1.15rem;
+      font-weight: 700;
+      font-family: monospace;
+    }
+
+    .val-entry { color: var(--accent-cyan); }
+    .val-tp { color: var(--accent-green); }
+    .val-sl { color: var(--accent-red); }
+
+    .setup-footer {
+      grid-column: span 2;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px dashed var(--card-border);
+      padding-top: 8px;
+      margin-top: 4px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Multi-Timeframe Forecasts (1m, 5m, 15m) */
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-main);
+    }
+
+    .timeframe-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    @media (min-width: 768px) {
+      .timeframe-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    .tf-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .tf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .tf-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--accent-cyan);
+    }
+
+    .tf-status {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .tf-reasons {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .reason-item {
+      position: relative;
+      padding-left: 14px;
+    }
+
+    .reason-item::before {
+      content: "•";
+      position: absolute;
+      left: 2px;
+      color: var(--accent-cyan);
+      font-weight: bold;
+    }
+
+    /* Orderbook Liquidity Walls */
+    .walls-container {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    @media (min-width: 768px) {
+      .walls-container {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .wall-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .wall-panel-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .wall-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-family: monospace;
+      font-size: 0.8rem;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+
+    .wall-bar-container {
+      position: relative;
+      height: 20px;
+      background: rgba(255,255,255,0.02);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+    }
+
+    .wall-bar-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      opacity: 0.25;
+      border-radius: 4px;
+    }
+
+    .fill-bid { background: var(--accent-green); }
+    .fill-ask { background: var(--accent-red); }
+
+    .wall-info {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      font-size: 0.75rem;
+      font-family: monospace;
+    }
+
+    /* MEV & Sandwich Attack Radar */
+    .mev-card {
+      background: linear-gradient(145deg, #1a162b, #111222);
+      border: 1px solid #37235a;
+      border-radius: 16px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .mev-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mev-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--accent-purple);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .risk-gauge {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .gauge-score {
+      font-size: 2rem;
+      font-weight: 900;
+      font-family: monospace;
+    }
+
+    .gauge-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .risk-crit { color: var(--accent-red); }
+    .risk-elev { color: var(--accent-yellow); }
+    .risk-low { color: var(--accent-green); }
+
+    .slippage-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      font-family: monospace;
+      margin-top: 6px;
+    }
+
+    .slippage-table th, .slippage-table td {
+      padding: 8px 6px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .slippage-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+    }
+
+    /* Sandwich Visualizer Diagram */
+    .sandwich-diagram {
+      background: rgba(10, 13, 20, 0.7);
+      border: 1px solid rgba(213, 0, 249, 0.2);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .diagram-step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.8rem;
+    }
+
+    .step-badge {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(213, 0, 249, 0.2);
+      color: var(--accent-purple);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    .step-content {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .step-title {
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .step-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Bottom Navigation Bar for Mobile */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #0f1420;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-around;
+      padding: 8px 4px;
+      z-index: 100;
+    }
+
+    .nav-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .nav-btn.active {
+      color: var(--accent-cyan);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 24 24">
+        <path d="M12 2L4.5 9.5l3.5 3.5L12 9l4 4 3.5-3.5L12 2zm0 14.5l-4-4-3.5 3.5L12 23.5l7.5-7.5-3.5-3.5-4 4z"/>
+      </svg>
+      <h1>BINANCE WSS</h1>
+      <span>OTONOM BOT</span>
+    </div>
+
+    <div class="header-metrics">
+      <div class="live-indicator">
+        <div class="live-dot"></div>
+        <span id="ws-status">CANLI WSS</span>
+      </div>
+      <div id="ping-latency" style="color: var(--text-muted); font-family: monospace;">18ms</div>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Hero Card: Price & Active Setup -->
+    <div class="hero-card">
+      <div class="price-box">
+        <div class="symbol-label">BTC / USDT • SPOT REALTIME</div>
+        <div class="live-price" id="mark-price">
+          68,420.50 <span class="price-currency">USDT</span>
+        </div>
+        <div id="consensus-badge" class="signal-badge badge-bullish">
+          ▲ GÜÇLÜ AL (STRONG LONG)
+        </div>
+      </div>
+
+      <div class="setup-grid">
+        <div class="setup-item">
+          <span class="setup-label">GİRİŞ (ENTRY)</span>
+          <span class="setup-value val-entry" id="setup-entry">$68,390.00</span>
+        </div>
+        <div class="setup-item">
+          <span class="setup-label">STOP LOSS (SL)</span>
+          <span class="setup-value val-sl" id="setup-sl">$68,180.00</span>
+        </div>
+        <div class="setup-item">
+          <span class="setup-label">HEDEF 1 (TP1)</span>
+          <span class="setup-value val-tp" id="setup-tp1">$68,750.00</span>
+        </div>
+        <div class="setup-item">
+          <span class="setup-label">HEDEF 2 (TP2)</span>
+          <span class="setup-value val-tp" id="setup-tp2">$69,200.00</span>
+        </div>
+        <div class="setup-footer">
+          <span id="setup-rr">Risk/Ödül: 1:2.4</span>
+          <span id="setup-pnl">Beklenen Kâr: +0.85%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multi-Timeframe Forecasts (1m, 5m, 15m) -->
+    <div>
+      <div class="section-title">
+        <span>⏱️</span> ÇOKLU ZAMAN DİLİMİ TAHMİNLERİ (1m • 5m • 15m)
+      </div>
+      <div class="timeframe-grid">
+        <!-- 1m -->
+        <div class="tf-card" id="card-1m">
+          <div class="tf-header">
+            <span class="tf-title">1 DAKİKA (1m)</span>
+            <span class="tf-status badge-bullish" id="status-1m">AL (BULLISH)</span>
+          </div>
+          <div class="tf-reasons" id="reasons-1m">
+            <div class="reason-item">EMA-9 ve EMA-21 yukarı kesişim (Golden Cross)</div>
+            <div class="reason-item">Taker hacim baskısı: +14.2 BTC alıcı üstünlüğü</div>
+          </div>
+        </div>
+
+        <!-- 5m -->
+        <div class="tf-card" id="card-5m">
+          <div class="tf-header">
+            <span class="tf-title">5 DAKİKA (5m)</span>
+            <span class="tf-status badge-bullish" id="status-5m">AL (BULLISH)</span>
+          </div>
+          <div class="tf-reasons" id="reasons-5m">
+            <div class="reason-item">MACD histogramı pozitif bölgede genişliyor</div>
+            <div class="reason-item">RSI 54.8 ile sağlıklı ivme bölgesinde</div>
+          </div>
+        </div>
+
+        <!-- 15m -->
+        <div class="tf-card" id="card-15m">
+          <div class="tf-header">
+            <span class="tf-title">15 DAKİKA (15m)</span>
+            <span class="tf-status badge-bullish" id="status-15m">AL (BULLISH)</span>
+          </div>
+          <div class="tf-reasons" id="reasons-15m">
+            <div class="reason-item">68,200$ ana destek duvarından teyitli sıçrama</div>
+            <div class="reason-item">Trend yönü yükseliş kanalında stabil</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Orderbook Walls Section -->
+    <div>
+      <div class="section-title">
+        <span>🧱</span> ORDERBOOK LİKİDİTE DUVARLARI (DESTEK / DİRENÇ KÜMELERİ)
+      </div>
+      <div class="walls-container">
+        <!-- Bids (Support) -->
+        <div class="wall-panel">
+          <div class="wall-panel-title">
+            <span style="color: var(--accent-green);">DESTEK DUVARLARI (BIDS)</span>
+            <span id="bid-dominance">Alıcı: %64.2</span>
+          </div>
+          <div id="bid-walls-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Asks (Resistance) -->
+        <div class="wall-panel">
+          <div class="wall-panel-title">
+            <span style="color: var(--accent-red);">DİRENÇ DUVARLARI (ASKS)</span>
+            <span id="ask-dominance">Satıcı: %35.8</span>
+          </div>
+          <div id="ask-walls-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MEV Sandwich & Frontrunning Radar -->
+    <div class="mev-card">
+      <div class="mev-header">
+        <div class="mev-title">
+          <span>⚡</span> SANDWICH / FRONTRUNNING (MEV) RADARI
+        </div>
+        <div class="risk-gauge">
+          <span class="gauge-score risk-elev" id="mev-risk-score">48%</span>
+          <span class="gauge-label badge-bullish" id="mev-risk-level">ORTA RİSK</span>
+        </div>
+      </div>
+
+      <div style="font-size: 0.8rem; color: var(--text-muted);" id="mev-recommendation">
+        Mempool'da $50K üzeri alımlarda orta seviye slippage sömürü riski mevcut.
+      </div>
+
+      <!-- Slippage Matrix -->
+      <table class="slippage-table">
+        <thead>
+          <tr>
+            <th>İşlem Hacmi</th>
+            <th>Alış Slippage</th>
+            <th>Satış Slippage</th>
+            <th>En Kötü Fiyat</th>
+          </tr>
+        </thead>
+        <tbody id="slippage-rows">
+          <!-- Dynamically populated -->
+        </tbody>
+      </table>
+
+      <!-- Visual Sandwich Attack Flow -->
+      <div class="sandwich-diagram">
+        <div style="font-size: 0.75rem; font-weight: 700; color: var(--accent-purple); text-transform: uppercase;">
+          Canlı Sandwich Saldırı Simülasyonu ($100K Piyasa Emri)
+        </div>
+        <div class="diagram-step">
+          <div class="step-badge">1</div>
+          <div class="step-content">
+            <span class="step-title" style="color: var(--accent-cyan);">FRONTRUN ALIM (MEV Ajanı)</span>
+            <span class="step-desc">Ajan yüksek gaz rüşvetiyle mağdurdan hemen önce alım yapar.</span>
+          </div>
+        </div>
+        <div class="diagram-step">
+          <div class="step-badge">2</div>
+          <div class="step-content">
+            <span class="step-title" style="color: var(--accent-yellow);">MAĞDUR TAKASI (Büyük Piyasa Emri)</span>
+            <span class="step-desc">Kullanıcı şişirilmiş fiyattan emir doldurarak slippage kaybı yaşar.</span>
+          </div>
+        </div>
+        <div class="diagram-step">
+          <div class="step-badge">3</div>
+          <div class="step-content">
+            <span class="step-title" style="color: var(--accent-green);">BACKRUN SATIŞ (Kâr Realizasyonu)</span>
+            <span class="step-desc" id="mev-profit-desc">Ajan saniyeler içinde satarak net kâr elde eder.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
+      <span>📊</span>
+      <span>Sinyaller</span>
+    </button>
+    <button class="nav-btn" onclick="document.querySelector('.walls-container').scrollIntoView({behavior: 'smooth'})">
+      <span>🧱</span>
+      <span>Duvarlar</span>
+    </button>
+    <button class="nav-btn" onclick="document.querySelector('.mev-card').scrollIntoView({behavior: 'smooth'})">
+      <span>⚡</span>
+      <span>MEV Radar</span>
+    </button>
+  </nav>
+
+  <script>
+    async function updateDashboard() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // 1. Mark Price & Latency
+        const price = data.markPrice || 68420.0;
+        document.getElementById('mark-price').innerHTML = `${price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} <span class="price-currency">USDT</span>`;
+        document.getElementById('ping-latency').innerText = `${Math.round(data.latencyMs || 18)}ms`;
+        document.getElementById('ws-status').innerText = data.isLiveWs ? "CANLI BINANCE WSS" : "SENTETİK WSS MOTORU";
+
+        // 2. Trade Setup
+        const setup = data.orderbook.tradeSetup;
+        if (setup) {
+          document.getElementById('setup-entry').innerText = `$${setup.entry.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+          document.getElementById('setup-tp1').innerText = `$${setup.tp1.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+          document.getElementById('setup-tp2').innerText = `$${setup.tp2.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+          document.getElementById('setup-sl').innerText = `$${setup.sl.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+          document.getElementById('setup-rr').innerText = `Risk/Ödül: ${setup.riskRewardRatio}`;
+          document.getElementById('setup-pnl').innerText = `Beklenen Kâr: +${setup.expectedPnlPct}%`;
+
+          const consensusBadge = document.getElementById('consensus-badge');
+          if (setup.direction === 'LONG') {
+            consensusBadge.className = 'signal-badge badge-bullish';
+            consensusBadge.innerText = '▲ GÜÇLÜ AL (STRONG LONG)';
+          } else {
+            consensusBadge.className = 'signal-badge badge-bearish';
+            consensusBadge.innerText = '▼ GÜÇLÜ SAT (STRONG SHORT)';
+          }
+        }
+
+        // 3. Timeframes (1m, 5m, 15m)
+        const tfs = data.predictions.timeframes;
+        if (tfs) {
+          ['1m', '5m', '15m'].forEach(tf => {
+            const tfData = tfs[tf];
+            if (!tfData) return;
+            const statusEl = document.getElementById(`status-${tf}`);
+            statusEl.className = tfData.direction === 'BULLISH' ? 'tf-status badge-bullish' : 'tf-status badge-bearish';
+            statusEl.innerText = `${tfData.direction} (%${tfData.confidence})`;
+
+            const reasonsEl = document.getElementById(`reasons-${tf}`);
+            reasonsEl.innerHTML = tfData.reasons.map(r => `<div class="reason-item">${r}</div>`).join('');
+          });
+        }
+
+        // 4. Orderbook Walls
+        const ob = data.orderbook;
+        if (ob) {
+          document.getElementById('bid-dominance').innerText = `Alıcı: %${ob.bidDominance}`;
+          document.getElementById('ask-dominance').innerText = `Satıcı: %${(100 - ob.bidDominance).toFixed(1)}`;
+
+          const bidList = document.getElementById('bid-walls-list');
+          bidList.innerHTML = ob.bidWalls.map(w => `
+            <div class="wall-bar-container">
+              <div class="wall-bar-fill fill-bid" style="width: ${Math.min(100, w.volume * 1.5)}%;"></div>
+              <div class="wall-info">
+                <span style="color: var(--accent-green); font-weight: 700;">$${w.price.toLocaleString()}</span>
+                <span>${w.volume.toFixed(2)} BTC (${w.distancePct}%)</span>
+              </div>
+            </div>
+          `).join('') || '<div style="font-size: 0.75rem; color: var(--text-muted);">Aktif büyük alıcı duvarı tespit edilmedi.</div>';
+
+          const askList = document.getElementById('ask-walls-list');
+          askList.innerHTML = ob.askWalls.map(w => `
+            <div class="wall-bar-container">
+              <div class="wall-bar-fill fill-ask" style="width: ${Math.min(100, w.volume * 1.5)}%;"></div>
+              <div class="wall-info">
+                <span style="color: var(--accent-red); font-weight: 700;">$${w.price.toLocaleString()}</span>
+                <span>${w.volume.toFixed(2)} BTC (${w.distancePct}%)</span>
+              </div>
+            </div>
+          `).join('') || '<div style="font-size: 0.75rem; color: var(--text-muted);">Aktif büyük satıcı duvarı tespit edilmedi.</div>';
+        }
+
+        // 5. MEV Sandwich Radar
+        const mev = data.mevAnalytics;
+        if (mev) {
+          const scoreEl = document.getElementById('mev-risk-score');
+          scoreEl.innerText = `${mev.frontrunRiskScore}%`;
+          scoreEl.className = mev.riskLevel === 'CRITICAL' ? 'gauge-score risk-crit' : (mev.riskLevel === 'ELEVATED' ? 'gauge-score risk-elev' : 'gauge-score risk-low');
+          document.getElementById('mev-risk-level').innerText = `${mev.riskLevel} RİSK`;
+          document.getElementById('mev-recommendation').innerText = mev.recommendation;
+
+          // Slippage Table
+          const tbody = document.getElementById('slippage-rows');
+          tbody.innerHTML = mev.slippageMatrix.map(row => `
+            <tr>
+              <td>$${(row.sizeUsd / 1000).toFixed(0)}K</td>
+              <td style="color: ${row.buySlippagePct > 0.1 ? 'var(--accent-red)' : 'var(--text-main)'};">+${row.buySlippagePct}%</td>
+              <td style="color: ${row.sellSlippagePct > 0.1 ? 'var(--accent-red)' : 'var(--text-main)'};">-${row.sellSlippagePct}%</td>
+              <td>$${row.buyWorstPrice.toLocaleString()}</td>
+            </tr>
+          `).join('');
+
+          const sim = mev.sandwichSimulation;
+          if (sim) {
+            document.getElementById('mev-profit-desc').innerText = `Tahmini bot kârı: +$${sim.estimatedMevProfitUsd.toFixed(2)} | Mağdur kaybı: -$${sim.victimSlippageLossUsd.toFixed(2)}`;
+          }
+        }
+
+      } catch (err) {
+        console.error("Dashboard update failed:", err);
+      }
+    }
+
+    // Refresh every 500ms for high-frequency trading feel
+    setInterval(updateDashboard, 500);
+    updateDashboard();
+  </script>
+</body>
+</html>
