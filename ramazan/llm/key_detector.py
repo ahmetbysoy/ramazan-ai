@@ -155,19 +155,21 @@ class SmartKeyDetector:
     def auto_map_providers(available_keys: Dict[str, str], current_config: RamazanConfig) -> RamazanConfig:
         """
         Dynamically configures agents based on all currently available API keys.
-        If multiple providers are present, assigns optimal roles:
-        - Orchestrator / Architect: Claude or OpenAI or Gemini Pro
-        - Worker: DeepSeek / Gemini Flash / Haiku (cost/speed optimal)
-        - Reviewer: Claude / OpenAI (rigorous auditing)
+        Multi-model optimal distribution:
+        - Architect: Claude (Anthropic)
+        - Worker: DeepSeek (DeepSeek)
+        - Reviewer: Grok (xAI) or Claude
+        Falls back smoothly to whichever providers are available.
         """
         has_anthropic = "anthropic" in available_keys or bool(os.environ.get("ANTHROPIC_API_KEY"))
+        has_deepseek = "deepseek" in available_keys or bool(os.environ.get("DEEPSEEK_API_KEY"))
+        has_xai = "xai" in available_keys or bool(os.environ.get("XAI_API_KEY"))
         has_openai = "openai" in available_keys or bool(os.environ.get("OPENAI_API_KEY"))
         has_gemini = "gemini" in available_keys or bool(os.environ.get("GEMINI_API_KEY"))
-        has_deepseek = "deepseek" in available_keys or bool(os.environ.get("DEEPSEEK_API_KEY"))
         has_groq = "groq" in available_keys or bool(os.environ.get("GROQ_API_KEY"))
         has_ollama = "ollama" in available_keys or bool(os.environ.get("OLLAMA_API_BASE"))
 
-        # Determine Orchestrator & Architect
+        # 1. Determine Architect & Orchestrator
         if has_anthropic:
             orch_model = ModelConfig(model="claude-3-7-sonnet-20250219", provider="anthropic", temperature=0.2)
             arch_model = ModelConfig(model="claude-3-7-sonnet-20250219", provider="anthropic", temperature=0.2)
@@ -190,7 +192,7 @@ class SmartKeyDetector:
             orch_model = current_config.models.orchestrator
             arch_model = current_config.models.architect
 
-        # Determine Worker
+        # 2. Determine Worker (Prefer DeepSeek for coding efficiency & cost)
         if has_deepseek:
             worker_low = ModelConfig(model="deepseek/deepseek-chat", provider="deepseek", temperature=0.2)
             worker_med = ModelConfig(model="deepseek/deepseek-chat", provider="deepseek", temperature=0.2)
@@ -217,8 +219,10 @@ class SmartKeyDetector:
             worker_high = current_config.models.worker.high
             worker_crit = current_config.models.worker.critical
 
-        # Determine Reviewer
-        if has_anthropic:
+        # 3. Determine Reviewer (Prefer Grok if xAI is present, else Claude Sonnet / OpenAI)
+        if has_xai:
+            reviewer_model = ModelConfig(model="xai/grok-2", provider="xai", temperature=0.1)
+        elif has_anthropic:
             reviewer_model = ModelConfig(model="claude-3-7-sonnet-20250219", provider="anthropic", temperature=0.1)
         elif has_openai:
             reviewer_model = ModelConfig(model="gpt-4o", provider="openai", temperature=0.1)

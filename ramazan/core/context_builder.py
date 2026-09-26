@@ -117,13 +117,14 @@ You MUST respond with a valid JSON object containing:
 """
         return prompt
 
-    def build_reviewer_prompt(self, task: Task, changes_summary: str, test_output: str) -> str:
+    def build_reviewer_prompt(self, task: Task, changes_summary: str, test_output: str, git_diff: Optional[str] = None) -> str:
         """
-        Builds Reviewer prompt matching Section 18 review protocol.
+        Builds Reviewer prompt matching Section 18 review protocol with real git diff.
         """
         arch = self.load_architecture_rules()
         files = self.load_relevant_files(task.files)
         files_formatted = "\n\n".join([f"### File: {path}\n```\n{content}\n```" for path, content in files.items()])
+        diff_block = f"GIT DIFF (WHAT CHANGED):\n```diff\n{git_diff}\n```\n\n" if git_diff else ""
 
         prompt = f"""ROLE: You are an expert code reviewer. Your job is NOT to write code or compliment the worker.
 Your job is to rigorously identify defects, architectural violations, security holes, performance issues, missing tests, and unhandled edge cases.
@@ -138,7 +139,7 @@ Description: {task.description}
 Acceptance Criteria:
 {chr(10).join([f"- {c}" for c in task.acceptanceCriteria])}
 
-CODE CHANGES & RELEVANT FILES:
+{diff_block}CODE CHANGES & RELEVANT FILES (FULL DISK STATE):
 {files_formatted}
 
 CHANGES SUMMARY:
@@ -153,6 +154,7 @@ INSPECTION CHECKLIST:
 3. Architecture: Are module boundaries and architecture rules respected?
 4. Edge Cases: Empty inputs, boundary values, exception handling?
 5. Testing: Are test cases comprehensive and genuine?
+6. Diff Minimality: Worker sadece gerekli satırları mı değiştirdi, yoksa gereksiz yere tüm dosyayı mı yeniden yazdı?
 
 REQUIRED OUTPUT:
 You MUST reply with a JSON object conforming strictly to:

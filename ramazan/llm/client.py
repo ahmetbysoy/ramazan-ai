@@ -9,15 +9,17 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
+from ramazan.llm.errors import ConfigurationError, ModelCallError, is_retriable_error
 
 logger = logging.getLogger("ramazan.llm")
 
 
 class LLMResponse(BaseModel):
-    content: str
+    content: str = ""
     model: str
     inputTokens: int = 0
     outputTokens: int = 0
+    tool_calls: Optional[List[Dict[str, Any]]] = None
     raw: Optional[Dict[str, Any]] = None
 
 
@@ -46,14 +48,19 @@ def _auto_load_env_keys():
 class LLMClient:
     def __init__(self, use_mock: Optional[bool] = None):
         _auto_load_env_keys()
-        # If explicitly requested or no API keys found in environment, enable mock/simulated responses
         has_keys = bool(
             os.environ.get("ANTHROPIC_API_KEY") or
             os.environ.get("OPENAI_API_KEY") or
             os.environ.get("GEMINI_API_KEY") or
-            os.environ.get("DEEPSEEK_API_KEY")
+            os.environ.get("DEEPSEEK_API_KEY") or
+            os.environ.get("XAI_API_KEY")
         )
-        self.use_mock = use_mock if use_mock is not None else (not has_keys)
+        if use_mock is not None:
+            self.use_mock = use_mock
+        elif os.environ.get("RAMAZAN_MOCK") in ["1", "true", "True"]:
+            self.use_mock = True
+        else:
+            self.use_mock = not has_keys
 
     def generate(self, model: str, prompt: str, system_prompt: Optional[str] = None, temperature: float = 0.2) -> LLMResponse:
         if self.use_mock:
@@ -108,8 +115,94 @@ class LLMClient:
             if last_err:
                 raise last_err
         except Exception as e:
-            logger.warning(f"LiteLLM call failed ({e}). Falling back to simulated response for continuity.")
-            return self._generate_mock(model, prompt, system_prompt)
+            logger.error(f"LiteLLM call failed for {model}: {e}")
+            raise ModelCallError(model=model, original_error=e, retriable=is_retriable_error(e)) from e
+
+    def generate_with_tools(
+        self,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        temperature: float = 0.2,
+    ) -> LLMResponse:
+        """
+        Executes a turn with tools using LiteLLM.
+        Returns LLMResponse containing content and any tool_calls.
+        """
+        if self.use_mock:
+            return self._generate_mock_with_tools(model, messages, tools)
+
+        try:
+            import litellm
+
+            litellm_model = model
+            if (litellm_model.startswith("gemini-") or "gemini" in litellm_model) and not litellm_model.startswith("gemini/"):
+                litellm_model = f"gemini/{litellm_model}"
+
+            kwargs: Dict[str, Any] = {
+                "model": litellm_model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if tools:
+                kwargs["tools"] = tools
+
+            resp = litellm.completion(**kwargs)
+            choice = resp.choices[0]
+            msg = choice.message
+            content = msg.content or ""
+
+            tool_calls_data = None
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                tool_calls_data = []
+                for tc in msg.tool_calls:
+                    if hasattr(tc, "model_dump"):
+                        tool_calls_data.append(tc.model_dump())
+                    elif isinstance(tc, dict):
+                        tool_calls_data.append(tc)
+                    else:
+                        tool_calls_data.append({
+                            "id": getattr(tc, "id", "call_1"),
+                            "type": "function",
+                            "function": {
+                                "name": getattr(tc.function, "name", ""),
+                                "arguments": getattr(tc.function, "arguments", "{}")
+                            }
+                        })
+
+            usage = getattr(resp, "usage", None)
+            in_tok = getattr(usage, "prompt_tokens", 0) if usage else 0
+            out_tok = getattr(usage, "completion_tokens", 0) if usage else 0
+
+            return LLMResponse(
+                content=content,
+                model=litellm_model,
+                inputTokens=in_tok,
+                outputTokens=out_tok,
+                tool_calls=tool_calls_data,
+            )
+        except Exception as e:
+            logger.error(f"LiteLLM tool completion failed for {model}: {e}")
+            raise ModelCallError(model=model, original_error=e, retriable=is_retriable_error(e)) from e
+
+    def _generate_mock_with_tools(
+        self,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> LLMResponse:
+        """
+        Mock responder for multi-turn tool calling.
+        """
+        system_prompt = None
+        user_prompt = ""
+        for m in messages:
+            if m.get("role") == "system":
+                system_prompt = m.get("content")
+            elif m.get("role") == "user":
+                user_prompt = m.get("content", "")
+
+        return self._generate_mock(model, user_prompt, system_prompt)
 
     def _generate_mock(self, model: str, prompt: str, system_prompt: Optional[str] = None) -> LLMResponse:
         """

@@ -34,6 +34,7 @@ from ramazan.tools.test_runner import TestEngine, TestExecutionResult
 from ramazan.tools.git_manager import GitManager
 from ramazan.llm.client import LLMClient
 from ramazan.llm.cost_tracker import CostTracker
+from ramazan.llm.errors import ModelCallError
 from ramazan.agents.worker_agent import WorkerAgent, WorkerOutput, ScopeViolationError, is_test_path
 from ramazan.agents.reviewer_agent import ReviewerAgent
 from ramazan.agents.architect_agent import ArchitectAgent
@@ -238,6 +239,18 @@ class Orchestrator:
                 for tst in worker_output.tests:
                     if tst.path not in snapshot:
                         snapshot[tst.path] = None
+            except ModelCallError as mce:
+                logger.error(f"Worker model call error for {task.id}: {mce}")
+                if mce.retriable:
+                    action = self.circuit_breaker.check(task, failure_reason=f"Worker model error: {mce}")
+                    self.task_engine.save_task(task)
+                    if action == CircuitBreakerAction.RETRY_WITH_FEEDBACK:
+                        time.sleep(2)
+                        continue
+                self.task_engine.update_task_status(task.id, TaskStatus.BLOCKED.value)
+                self.state_manager.block_task(task.id)
+                self._handle_circuit_breaker(task, str(mce), snapshot=snapshot)
+                return False
             except ScopeViolationError as sve:
                 logger.error(f"Scope violation in {task.id}: {sve}")
                 action = self.circuit_breaker.check(task, failure_reason=f"Scope violation: {sve}")
@@ -280,12 +293,28 @@ class Orchestrator:
             # 4. Reviewer verification (Section 18 & 19)
             if self.config.system.reviewEnabled:
                 self.task_engine.update_task_status(task.id, TaskStatus.REVIEWING.value)
+                diff_output = self.git_manager.diff_for_task(files=task.files)
                 reviewer_prompt = self.context_builder.build_reviewer_prompt(
                     task=task,
                     changes_summary=worker_output.explanation,
-                    test_output=test_result.stdout or test_result.summary
+                    test_output=test_result.stdout or test_result.summary,
+                    git_diff=diff_output
                 )
-                review_result = reviewer.review_task(task, reviewer_prompt)
+                try:
+                    review_result = reviewer.review_task(task, reviewer_prompt, git_diff=diff_output)
+                except ModelCallError as mce:
+                    logger.error(f"Reviewer model call error for {task.id}: {mce}")
+                    if mce.retriable:
+                        action = self.circuit_breaker.check(task, failure_reason=f"Reviewer model failure: {mce}")
+                        self.task_engine.save_task(task)
+                        if action == CircuitBreakerAction.RETRY_WITH_FEEDBACK:
+                            time.sleep(2)
+                            continue
+                    self.task_engine.update_task_status(task.id, TaskStatus.BLOCKED.value)
+                    self.state_manager.block_task(task.id)
+                    self._handle_circuit_breaker(task, str(mce), snapshot=snapshot)
+                    return False
+
                 task.reviewStatus = review_result.status
                 task.reviewFeedback = review_result.summary
 

@@ -37,18 +37,22 @@ class GitManager:
         return self._repo
 
     def init_if_needed(self) -> bool:
-        if not HAS_GITPYTHON or git is None:
-            return False
         git_dir = self.repo_dir / ".git"
-        if not git_dir.exists():
+        if git_dir.exists():
+            return True
+        if HAS_GITPYTHON and git is not None:
             try:
                 self._repo = git.Repo.init(self.repo_dir)
                 logger.info(f"Initialized new Git repository at {self.repo_dir}")
                 return True
             except Exception as e:
                 logger.error(f"Failed to initialize git repository: {e}")
-                return False
-        return True
+        try:
+            import subprocess
+            subprocess.run(["git", "init"], cwd=str(self.repo_dir), check=True, capture_output=True)
+            return True
+        except Exception:
+            return False
 
     def get_status(self) -> str:
         repo = self.get_repo()
@@ -61,6 +65,56 @@ class GitManager:
         if not repo:
             return ""
         return repo.git.diff()
+
+    def diff_for_task(self, files: Optional[List[str]] = None, base_ref: str = "HEAD") -> str:
+        """
+        Returns unified diff for working tree changes or specific task files against base_ref.
+        Includes newly added untracked files with intent-to-add.
+        """
+        repo = self.get_repo()
+        if repo:
+            try:
+                untracked = getattr(repo, "untracked_files", [])
+                for f in (files or untracked):
+                    if f in untracked and not f.startswith(".ramazan"):
+                        try:
+                            repo.git.add("-N", f)
+                        except Exception:
+                            pass
+                if files:
+                    valid_files = [f for f in files if (self.repo_dir / f).exists()]
+                    if valid_files:
+                        diff = repo.git.diff(base_ref, "--", *valid_files)
+                        if diff.strip():
+                            return diff
+                        return repo.git.diff("--cached", "--", *valid_files)
+                diff = repo.git.diff(base_ref)
+                if not diff.strip():
+                    diff = repo.git.diff("--cached")
+                return diff
+            except Exception:
+                try:
+                    return repo.git.diff()
+                except Exception:
+                    pass
+
+        # Subprocess git fallback
+        try:
+            import subprocess
+            if files:
+                for f in files:
+                    subprocess.run(["git", "add", "-N", f], cwd=str(self.repo_dir), capture_output=True)
+                valid = [f for f in files if (self.repo_dir / f).exists()]
+                if valid:
+                    res = subprocess.run(["git", "diff", base_ref, "--"] + valid, cwd=str(self.repo_dir), capture_output=True, text=True)
+                    if res.stdout.strip():
+                        return res.stdout
+            res = subprocess.run(["git", "diff", base_ref], cwd=str(self.repo_dir), capture_output=True, text=True)
+            if not res.stdout.strip():
+                res = subprocess.run(["git", "diff"], cwd=str(self.repo_dir), capture_output=True, text=True)
+            return res.stdout
+        except Exception:
+            return ""
 
     def commit_task(self, task_id: str, title: str, task_type: str = "implementation", files: Optional[List[str]] = None) -> Optional[str]:
         repo = self.get_repo()

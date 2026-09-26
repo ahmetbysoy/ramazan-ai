@@ -633,9 +633,12 @@ from ramazan.llm.key_detector import SmartKeyDetector
 def configure(
     key: Optional[str] = Option(None, "--key", "-k", help="API key to automatically identify and configure"),
     mode: Optional[str] = Option(None, "--mode", "-m", help="Autonomy mode: step_by_step, semi_autonomous, fully_autonomous"),
+    architect: Optional[str] = Option(None, "--architect", help="Set model for Architect role (e.g. claude-3-7-sonnet-20250219)"),
+    worker: Optional[str] = Option(None, "--worker", help="Set model for Worker role (e.g. deepseek/deepseek-chat)"),
+    reviewer: Optional[str] = Option(None, "--reviewer", help="Set model for Reviewer role (e.g. xai/grok-2)"),
 ):
     """
-    Auto-detect API key provider, configure dynamic agent routing, and set autonomy mode.
+    Auto-detect API key provider, configure dynamic agent routing (Architect=Claude, Worker=DeepSeek, Reviewer=Grok), and set autonomy mode.
     """
     root_dir = find_project_root()
     config = RamazanConfig.load(root_dir)
@@ -648,9 +651,25 @@ def configure(
         config.system.autonomyMode = mode.lower()
         console.print(f"[green]Autonomy mode updated to:[/green] [bold cyan]{config.system.autonomyMode}[/bold cyan]")
 
+    if architect:
+        config.models.architect.model = architect
+        console.print(f"[green]Architect model updated to:[/green] [bold cyan]{architect}[/bold cyan]")
+    if worker:
+        config.models.worker.high.model = worker
+        config.models.worker.medium.model = worker
+        config.models.worker.low.model = worker
+        console.print(f"[green]Worker model updated to:[/green] [bold cyan]{worker}[/bold cyan]")
+    if reviewer:
+        config.models.reviewer.model = reviewer
+        console.print(f"[green]Reviewer model updated to:[/green] [bold cyan]{reviewer}[/bold cyan]")
+
     target_key = key
-    if not target_key and not mode:
-        target_key = prompt_input("Enter AI Provider API Key or Endpoint (Gemini, Claude, OpenAI, DeepSeek, Groq, Ollama)", hide_input=True)
+    if not target_key and not mode and not architect and not worker and not reviewer:
+        console.print("[cyan]Current Agent Model Roles:[/cyan]")
+        console.print(f"  • Architect: {config.models.architect.model} ({config.models.architect.provider})")
+        console.print(f"  • Worker:    {config.models.worker.high.model} ({config.models.worker.high.provider})")
+        console.print(f"  • Reviewer:  {config.models.reviewer.model} ({config.models.reviewer.provider})")
+        target_key = prompt_input("Enter AI Provider API Key or Endpoint (or press Enter to keep current):", hide_input=True)
 
     if target_key:
         detected = SmartKeyDetector.detect_provider(target_key)
@@ -669,19 +688,19 @@ def configure(
 
             # Auto re-map agents dynamically based on available key
             config = SmartKeyDetector.auto_map_providers({provider: target_key}, config)
-            console.print(Panel(
-                f"[bold]Orchestrator:[/bold] {config.models.orchestrator.model} ({config.models.orchestrator.provider})\n"
-                f"[bold]Architect:[/bold] {config.models.architect.model} ({config.models.architect.provider})\n"
-                f"[bold]Worker (High):[/bold] {config.models.worker.high.model} ({config.models.worker.high.provider})\n"
-                f"[bold]Worker (Medium):[/bold] {config.models.worker.medium.model} ({config.models.worker.medium.provider})\n"
-                f"[bold]Worker (Low):[/bold] {config.models.worker.low.model} ({config.models.worker.low.provider})\n"
-                f"[bold]Reviewer:[/bold] {config.models.reviewer.model} ({config.models.reviewer.provider})\n"
-                f"[bold]Autonomy Mode:[/bold] {config.system.autonomyMode}",
-                title=f"RAMAZAN AI - Dynamic Model Mapping for {provider.upper()}",
-                border_style="green"
-            ))
         else:
             console.print("[yellow]Could not automatically identify provider from key prefix. You can configure manually in .ramazan/config.json[/yellow]")
+
+    console.print(Panel(
+        f"[bold]Architect:[/bold] {config.models.architect.model} ({config.models.architect.provider})\n"
+        f"[bold]Worker (High):[/bold] {config.models.worker.high.model} ({config.models.worker.high.provider})\n"
+        f"[bold]Worker (Medium):[/bold] {config.models.worker.medium.model} ({config.models.worker.medium.provider})\n"
+        f"[bold]Worker (Low):[/bold] {config.models.worker.low.model} ({config.models.worker.low.provider})\n"
+        f"[bold]Reviewer:[/bold] {config.models.reviewer.model} ({config.models.reviewer.provider})\n"
+        f"[bold]Autonomy Mode:[/bold] {config.system.autonomyMode}",
+        title="RAMAZAN AI - Active Agent Roles",
+        border_style="green"
+    ))
 
     config.save(root_dir)
     try:
@@ -797,9 +816,12 @@ def run_argparse_cli(argv: Optional[List[str]] = None):
     p_reset.add_argument("task_id", help="Task ID e.g. TASK-001")
 
     # configure
-    p_cfg = subparsers.add_parser("configure", help="Auto-detect API key or configure mode")
+    p_cfg = subparsers.add_parser("configure", help="Auto-detect API key or configure mode and roles")
     p_cfg.add_argument("--key", "-k", default=None, help="API key")
     p_cfg.add_argument("--mode", "-m", default=None, help="Autonomy mode")
+    p_cfg.add_argument("--architect", default=None, help="Architect model")
+    p_cfg.add_argument("--worker", default=None, help="Worker model")
+    p_cfg.add_argument("--reviewer", default=None, help="Reviewer model")
 
     # task
     p_task = subparsers.add_parser("task", help="Task operations")
@@ -856,7 +878,7 @@ def run_argparse_cli(argv: Optional[List[str]] = None):
     elif cmd == "doctor":
         doctor()
     elif cmd == "configure":
-        configure(key=args.key, mode=args.mode)
+        configure(key=args.key, mode=args.mode, architect=args.architect, worker=args.worker, reviewer=args.reviewer)
     elif cmd in ["ui", "web"]:
         launch_ui(host=args.host, port=args.port)
     elif cmd == "reset":

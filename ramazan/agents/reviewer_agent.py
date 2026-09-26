@@ -42,6 +42,7 @@ class ReviewerAgent(BaseAgent):
         self,
         task: Task,
         context_prompt: str,
+        git_diff: Optional[str] = None,
     ) -> ReviewResult:
         """
         Executes strict review and saves markdown review record to .ramazan/reviews/TASK-XXX.md.
@@ -49,6 +50,7 @@ class ReviewerAgent(BaseAgent):
         system_prompt = (
             "You are an elite, uncompromising software auditor and security reviewer. "
             "You never say 'Looks good to me' without inspecting every line. "
+            "You inspect the git diff and files carefully to verify correctness and minimal diff footprint. "
             "You identify edge case defects, potential race conditions, security flaws, and architectural drift. "
             "You MUST respond ONLY with valid JSON conforming to the ReviewResult schema."
         )
@@ -57,7 +59,7 @@ class ReviewerAgent(BaseAgent):
         result = self._parse_review_result(resp.content)
 
         # Save review to .ramazan/reviews/
-        self._save_review_record(task.id, result, attempt=task.retryCount + 1)
+        self._save_review_record(task.id, result, attempt=task.retryCount + 1, git_diff=git_diff)
         return result
 
     def _parse_review_result(self, content: str) -> ReviewResult:
@@ -90,7 +92,7 @@ class ReviewerAgent(BaseAgent):
                 ]
             )
 
-    def _save_review_record(self, task_id: str, result: ReviewResult, attempt: int = 1):
+    def _save_review_record(self, task_id: str, result: ReviewResult, attempt: int = 1, git_diff: Optional[str] = None):
         review_dir = self.root_dir / ".ramazan" / "reviews"
         review_dir.mkdir(parents=True, exist_ok=True)
         review_file = review_dir / f"{task_id}.md"
@@ -106,6 +108,8 @@ class ReviewerAgent(BaseAgent):
         if not issues_md:
             issues_md = "_No issues found. Code meets acceptance criteria._\n"
 
+        diff_snippet = f"\n### Git Diff Audited\n```diff\n{git_diff}\n```\n" if git_diff else ""
+
         attempt_block = f"""## Attempt {attempt} — {ts}
 
 **Status:** `{result.status}`
@@ -113,7 +117,7 @@ class ReviewerAgent(BaseAgent):
 
 ### Summary
 {result.summary}
-
+{diff_snippet}
 ### Issues Identified
 {issues_md}
 """

@@ -132,3 +132,11 @@ Her görev için en pahalı modeli kullanmak yasaktır:
 ### 6.4 Git Entegrasyonu
 - Başarılı olan her görev için testler ve review onayından sonra otomatik atomik commit (`feat: [TASK-001] ...`) oluşturulur.
 - Testler başarısız olursa güvenli rollback uygulanır.
+
+### 6.5 Çoklu Model Rol Dağılımı (Multi-Model Architecture)
+RAMAZAN AI, sektör standardı multi-agent iş bölümü prensibiyle optimize edilmiştir:
+- **Architect (Claude):** Sistem mimarisi, gereksinim analizi, DAG planlama ve teknik tasarım (`claude-3-7-sonnet`).
+- **Worker (DeepSeek):** Çok turlu (multi-turn) tool loop ile kodlama, minimal diff yamaları ve test üretimi (`deepseek/deepseek-chat`).
+- **Reviewer (Grok / Claude):** Gerçek `git diff` denetimi, güvenlik, minimallik ve standart denetimi (`xai/grok-2` veya `claude-3-7-sonnet`).
+
+`ramazan configure` komutuyla mevcut API anahtarlarınıza göre roller otomatik atanır veya `--architect`, `--worker`, `--reviewer` bayraklarıyla manuel olarak özelleştirilebilir. Model çağrısı başarısız olduğunda sistem sessiz mock'a düşmez; katı hata semantiği (`ModelCallError`) ile görevi bloklayıp insan onayına eskalasyon sağlar.
