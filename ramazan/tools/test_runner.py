@@ -43,7 +43,8 @@ class TestEngine:
 
         env = dict(subprocess.os.environ)
         existing_pp = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = f"src:.:{existing_pp}" if existing_pp else "src:."
+        root_str = str(self.root_dir)
+        env["PYTHONPATH"] = f"{root_str}/src:{root_str}:src:.:{existing_pp}" if existing_pp else f"{root_str}/src:{root_str}:src:."
 
         try:
             res = subprocess.run(
@@ -85,7 +86,16 @@ class TestEngine:
                     passed_count = int(p_match.group(1)) if p_match else 0
                     tests_run = failures + passed_count
 
-            summary = "All tests passed successfully." if passed else f"Tests failed with exit code {res.returncode}."
+            if passed:
+                summary = "All tests passed successfully."
+            else:
+                err_lines = [
+                    l.strip() for l in stdout.splitlines()
+                    if any(k in l for k in ["ERROR", "FAILED", "ImportError", "ModuleNotFoundError", "SyntaxError", "NameError", "AttributeError", "AssertionError"])
+                    and not l.strip().startswith("=")
+                ]
+                err_snippet = " | ".join(err_lines[:2]) if err_lines else f"exit code {res.returncode}"
+                summary = f"Tests failed: {err_snippet}."
 
             result = TestExecutionResult(
                 command=cmd,

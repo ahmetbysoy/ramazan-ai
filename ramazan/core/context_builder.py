@@ -81,6 +81,7 @@ CONSTRAINTS:
 2. Comply strictly with architecture rules.
 3. Write clean, robust, and verifiable code.
 4. Include unit tests or test updates for all new/modified logic. Always write Python unit tests (tests/test_*.py) to test functionality, classes, or HTML/JS structures so they pass in pytest.
+5. Python Import Rules: The project root and src/ directory are in PYTHONPATH. Use absolute imports from root or src (e.g. `from src.domain.service import ...` or `from domain.service import ...`). Do not use bare `import service` without package path if the file is inside src/domain/.
 
 
 ACCEPTANCE CRITERIA:

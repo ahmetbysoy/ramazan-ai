@@ -33,7 +33,7 @@ VALID_TRANSITIONS = {
     TaskStatus.TESTING.value: [TaskStatus.REVIEWING.value, TaskStatus.FAILED.value, TaskStatus.RETRYING.value],
     TaskStatus.REVIEWING.value: [TaskStatus.APPROVED.value, TaskStatus.FAILED.value, TaskStatus.RETRYING.value],
     TaskStatus.APPROVED.value: [TaskStatus.COMPLETED.value],
-    TaskStatus.RETRYING.value: [TaskStatus.IN_PROGRESS.value, TaskStatus.ESCALATED.value, TaskStatus.FAILED.value],
+    TaskStatus.RETRYING.value: [TaskStatus.IN_PROGRESS.value, TaskStatus.IMPLEMENTED.value, TaskStatus.ESCALATED.value, TaskStatus.FAILED.value],
     TaskStatus.ESCALATED.value: [TaskStatus.READY.value, TaskStatus.BLOCKED.value, TaskStatus.FAILED.value],
     TaskStatus.FAILED.value: [TaskStatus.RETRYING.value, TaskStatus.BLOCKED.value],
     TaskStatus.BLOCKED.value: [TaskStatus.READY.value, TaskStatus.PENDING.value],

@@ -213,6 +213,9 @@ class Orchestrator:
                 self._handle_circuit_breaker(task, "Budget limit exceeded.", snapshot=snapshot)
                 return False
 
+            if task.status != TaskStatus.IN_PROGRESS.value:
+                self.task_engine.update_task_status(task.id, TaskStatus.IN_PROGRESS.value)
+
             # 1. Build surgical context
             worker_prompt = self.context_builder.build_worker_prompt(
                 task=task,
@@ -260,7 +263,12 @@ class Orchestrator:
                 self.task_engine.save_task(task)
 
                 if action == CircuitBreakerAction.RETRY_WITH_FEEDBACK:
-                    test_failure_context = f"{test_result.summary}\n{test_result.stderr or test_result.stdout}"
+                    output_parts = [test_result.summary]
+                    if test_result.stdout and test_result.stdout.strip():
+                        output_parts.append(f"STDOUT:\n{test_result.stdout.strip()}")
+                    if test_result.stderr and test_result.stderr.strip():
+                        output_parts.append(f"STDERR:\n{test_result.stderr.strip()}")
+                    test_failure_context = "\n\n".join(output_parts)
                     time.sleep(2)
                     continue
                 else:
