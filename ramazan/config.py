@@ -41,6 +41,7 @@ class SystemConfig(StrictBaseModel):
     maxBudgetUsd: float = 20.0
     budgetWarningThreshold: float = 0.8
     autoGitCommit: bool = True
+    autoGitPush: bool = True
     humanInTheLoopOnCritical: bool = True
     strictScope: bool = True  # Worker task.files dışına çıkarsa FAIL (Section 14 & 20)
     reviewEnabled: bool = True  # Reviewer agent devrede mi

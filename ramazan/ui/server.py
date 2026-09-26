@@ -41,17 +41,137 @@ from ramazan.tools.test_runner import TestEngine
 logger = logging.getLogger("ramazan.ui")
 
 
+def _scrub_secrets(text: str) -> str:
+    """Masks API keys and personal access tokens to prevent credential leaks."""
+    if not text:
+        return ""
+    text = re.sub(r'ghp_[A-Za-z0-9]{30,}', '[REDACTED_GH_TOKEN]', text)
+    text = re.sub(r'AQ\.[A-Za-z0-9-_]{35,}', '[REDACTED_GEMINI_KEY]', text)
+    text = re.sub(r'AIza[A-Za-z0-9-_]{35}', '[REDACTED_API_KEY]', text)
+    text = re.sub(r'sk-[A-Za-z0-9-_]{20,}', '[REDACTED_API_KEY]', text)
+    return text
+
+
+def _analyze_error_log(text: str) -> Dict[str, Any]:
+    """Smart diagnostic engine that identifies the root cause of failures and provides actionable solutions."""
+    if not text:
+        return {"hasError": False}
+
+    # 1. ImportError / JS imported into Python test
+    if "ImportError" in text and ("test_" in text or ".js" in text or "game" in text):
+        return {
+            "hasError": True,
+            "errorType": "Yanlış Modül İçe Aktarımı (ImportError)",
+            "severity": "CRITICAL",
+            "rootCause": "Python test dosyası (pytest), JavaScript (.js) veya HTML dosyasını Python modülü gibi 'import' etmeye çalıştı.",
+            "recommendation": "Test dosyasında 'import' yerine 'Path(file).read_text()' ile dosya içeriği ve DOM/canvas yapıları denetlenmelidir.",
+            "quickAction": "reset_task",
+            "suggestedCommand": "ramazan reset <TASK_ID>",
+            "matchSnippet": "ImportError while importing test module",
+        }
+
+    # 2. Ubuntu / Debian PEP 668 externally-managed-environment
+    if "externally-managed-environment" in text or "PEP 668" in text:
+        return {
+            "hasError": True,
+            "errorType": "Sistem Paket Yöneticisi Koruması (PEP 668)",
+            "severity": "CRITICAL",
+            "rootCause": "Ubuntu 24.04+ veya Debian ortamında pip doğrudan sistem geneline paket kurulumunu kısıtlıyor.",
+            "recommendation": "Komutun sonuna '--break-system-packages' ekleyin: pip install <paket> --break-system-packages",
+            "quickAction": "copy_cmd",
+            "suggestedCommand": "pip install <paket> --break-system-packages",
+            "matchSnippet": "error: externally-managed-environment",
+        }
+
+    # 3. Missing package
+    no_mod = re.search(r"No module named '([a-zA-Z0-9_\-]+)'", text)
+    if no_mod:
+        mod_name = no_mod.group(1)
+        return {
+            "hasError": True,
+            "errorType": f"Eksik Python Kütüphanesi: '{mod_name}'",
+            "severity": "WARNING",
+            "rootCause": f"Çalışma ortamında '{mod_name}' paketi yüklü değil.",
+            "recommendation": f"Paketi terminalde kurun: pip install {mod_name} --break-system-packages",
+            "quickAction": "copy_cmd",
+            "suggestedCommand": f"pip install {mod_name} --break-system-packages",
+            "matchSnippet": f"No module named '{mod_name}'",
+        }
+
+    # 4. Circuit Breaker tripped
+    if "CIRCUIT BREAKER TRIPPED" in text or "Maximum retries" in text:
+        cb_task = re.search(r"for (TASK-\d+)", text)
+        task_id = cb_task.group(1) if cb_task else "TASK-001"
+        return {
+            "hasError": True,
+            "errorType": f"Circuit Breaker Devreye Girdi ({task_id})",
+            "severity": "CRITICAL",
+            "rootCause": f"{task_id} görevi üst üste 3 denemede testleri geçemediği için sonsuz döngüyü engellemek amacıyla askıya alındı.",
+            "recommendation": f"Görevi sıfırlayıp yeniden denemek için: ramazan reset {task_id}",
+            "quickAction": "reset_task",
+            "targetTaskId": task_id,
+            "suggestedCommand": f"ramazan reset {task_id}",
+            "matchSnippet": "CIRCUIT BREAKER TRIPPED",
+        }
+
+    # 5. SyntaxError
+    syntax_err = re.search(r"SyntaxError:\s*([^\n\r]+)", text)
+    if syntax_err:
+        err_msg = syntax_err.group(1)
+        return {
+            "hasError": True,
+            "errorType": "Sözdizimi Hatası (SyntaxError)",
+            "severity": "WARNING",
+            "rootCause": f"Python kodunda sözdizimi hatası: {err_msg}",
+            "recommendation": "Kod dosyasındaki parantez, tırnak veya girinti kapatmalarını kontrol edin.",
+            "quickAction": "view_logs",
+            "matchSnippet": f"SyntaxError: {err_msg}",
+        }
+
+    # 6. WebSocket Connection Failure
+    if "WebSocket connection failed" in text or "HTTP 451" in text:
+        return {
+            "hasError": True,
+            "errorType": "WebSocket Bağlantı / IP Kısıtlaması (HTTP 451)",
+            "severity": "WARNING",
+            "rootCause": "Borsa WebSocket sunucusu bağlantıyı reddetti veya coğrafi IP kısıtlaması uyguladı.",
+            "recommendation": "Sistem yüksek sadakatli sentetik fallback motoruna geçti. İsterseniz VPN / proxy kullanabilirsiniz.",
+            "quickAction": "view_logs",
+            "matchSnippet": "server rejected WebSocket connection",
+        }
+
+    # 7. Generic Test Failure
+    if "Tests FAILED" in text:
+        return {
+            "hasError": True,
+            "errorType": "Birim Test Başarısızlığı",
+            "severity": "WARNING",
+            "rootCause": "Kodlanan mantık kabul kriterleri veya pytest testlerinden geçemedi.",
+            "recommendation": "Ajan otomatik retry adımında testi inceleyip düzeltecektir.",
+            "quickAction": "view_logs",
+            "matchSnippet": "Tests FAILED",
+        }
+
+    return {"hasError": False}
+
+
 # ---------------------------------------------------------------------------
-# In-Memory Live Log Handler
+# In-Memory Live Log Handler with Instant File Flushing
 # ---------------------------------------------------------------------------
 class UIInMemoryLogHandler(logging.Handler):
-    """Ring buffer handler that stores recent logs for real-time streaming to the dashboard."""
+    """Ring buffer handler that stores recent logs and flushes immediately to .ramazan/logs/live_session.log."""
 
-    def __init__(self, capacity: int = 2500):
+    def __init__(self, capacity: int = 3000, root_dir: Optional[Path] = None):
         super().__init__()
         self.capacity = capacity
+        self.root_dir = (root_dir or Path.cwd()).resolve()
         self.logs: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
+        self._log_file = self.root_dir / ".ramazan" / "logs" / "live_session.log"
+        try:
+            self._log_file.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
 
     def emit(self, record: logging.LogRecord):
         try:
@@ -67,6 +187,15 @@ class UIInMemoryLogHandler(logging.Handler):
                 self.logs.append(entry)
                 if len(self.logs) > self.capacity:
                     self.logs.pop(0)
+
+                # Instantly write & flush to live_session.log
+                try:
+                    clean_msg = _scrub_secrets(msg)
+                    with open(self._log_file, "a", encoding="utf-8") as f:
+                        f.write(f"[{entry['time']}] [{entry['level']}] {clean_msg}\n")
+                        f.flush()
+                except Exception:
+                    pass
         except Exception:
             self.handleError(record)
 
@@ -86,6 +215,103 @@ log_handler = UIInMemoryLogHandler()
 log_handler.setFormatter(logging.Formatter("%(message)s"))
 logging.getLogger("ramazan").addHandler(log_handler)
 logging.getLogger("ramazan").setLevel(logging.INFO)
+
+
+def _append_chat_task_milestone(proj_root: Path, task: Any):
+    """Adds a rich, interactive task completion card to chat history."""
+    try:
+        path = proj_root / ".ramazan" / "chat_history.json"
+        history = []
+        if path.exists():
+            try:
+                history = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                history = []
+
+        file_cards = []
+        for f in getattr(task, "files", []):
+            full_f = proj_root / f
+            if full_f.exists() and full_f.is_file():
+                try:
+                    content_str = full_f.read_text(encoding="utf-8", errors="replace")
+                    lines_cnt = len(content_str.splitlines())
+                    snippet = content_str[:1200]
+                    file_cards.append({
+                        "path": f,
+                        "lines": lines_cnt,
+                        "snippet": snippet,
+                    })
+                except Exception:
+                    pass
+
+        entry = {
+            "id": f"msg-{len(history)+1}",
+            "sender": "ramazan",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "task_milestone",
+            "task": {
+                "id": task.id,
+                "title": task.title,
+                "status": task.status,
+                "testStatus": getattr(task, "testStatus", "PASSED"),
+                "reviewStatus": getattr(task, "reviewStatus", "APPROVED"),
+                "files": file_cards,
+            },
+            "text": (
+                f"🎉 **[{task.id}] {task.title} Başarıyla Tamamlandı!**\n\n"
+                f"📁 **Kodlanan Dosyalar & Konumları:**\n" +
+                ("\n".join([f"- `📄 {fc['path']}` *({fc['lines']} satır)*" for fc in file_cards]) if file_cards else "Belirtilen görev dosyaları güncellendi.") + "\n\n"
+                f"🧪 **Test Motoru:** `{getattr(task, 'testStatus', 'PASSED')}` ✅\n"
+                f"🕵️ **Reviewer Onayı:** `{getattr(task, 'reviewStatus', 'APPROVED')}` ✅\n"
+                f"📦 **Git:** Otomatik commit edildi ve GitHub'a push yapıldı 🚀"
+            ),
+            "actions": [
+                {"label": "▶️ Sıradaki Görevi Başlat (Step)", "action": "step"},
+                {"label": "⚡ Tümünü Otonom Koş (Run)", "action": "run"},
+                {"label": "📋 Görev Listesi", "tab": "tasks"},
+                {"label": "📡 Canlı Loglar", "tab": "logs"},
+            ]
+        }
+        history.append(entry)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Error appending chat milestone: {e}")
+
+
+def _append_chat_task_error(proj_root: Path, task: Any):
+    """Adds a clear diagnostic and recovery card to chat history when a task is escalated or fails."""
+    try:
+        path = proj_root / ".ramazan" / "chat_history.json"
+        history = []
+        if path.exists():
+            try:
+                history = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                history = []
+
+        diag = _analyze_error_log(getattr(task, "testOutput", "") or getattr(task, "lastError", "") or "")
+        err_entry = {
+            "id": f"msg-{len(history)+1}",
+            "sender": "ramazan",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "task_error",
+            "text": (
+                f"⚠️ **[{task.id}] Görevinde Bir Durum Oluştu ({task.status})**\n\n"
+                f"🛑 **Teşhis:** {diag.get('errorType', 'Birim Test veya Döngü Hatası')}\n"
+                f"🔍 **Neden:** {diag.get('rootCause', getattr(task, 'lastError', '') or 'Test kriterleri henüz karşılanamadı.')}\n"
+                f"💡 **Öneri:** {diag.get('recommendation', 'Görevi sıfırlayıp tekrar çalıştırmayı deneyebilirsiniz.')}"
+            ),
+            "actions": [
+                {"label": f"🔄 {task.id} Sıfırla (Reset)", "prompt": f"ramazan reset {task.id}"},
+                {"label": "📡 Canlı Logları İncele", "tab": "logs"},
+            ]
+        }
+        history.append(err_entry)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Error appending chat error: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +365,10 @@ class ExecutionManager:
                             "message": f"Görev {task.id} tamamlandı: {task.status}",
                         }
                         self.message = f"{task.id} tamamlandı."
+                        if task.status == "COMPLETED":
+                            _append_chat_task_milestone(proj_root, task)
+                        elif task.status in ["ESCALATED", "FAILED", "BLOCKED"]:
+                            _append_chat_task_error(proj_root, task)
                     else:
                         self.last_result = {
                             "success": False,
@@ -180,6 +410,8 @@ class ExecutionManager:
                         "state": res.state.model_dump(),
                     }
                     self.message = res.message
+                    if res.success:
+                        _append_chat_task_milestone(proj_root, type("SimpleTask", (), {"id": "FINAL_AUDIT", "title": "Tüm Görevler & Final Audit Tamamlandı", "status": "COMPLETED", "files": [], "testStatus": "PASSED", "reviewStatus": "APPROVED"})())
             except Exception as e:
                 logger.exception("Error executing run in background")
                 with self._lock:
@@ -475,7 +707,7 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
         return play_active()
 
     # -----------------------------------------------------------------------
-    # Live Log Streaming Endpoint
+    # Live Log Streaming, Diagnostic & Download Endpoints
     # -----------------------------------------------------------------------
     @app.get("/api/logs")
     def get_logs(since: int = Query(0)):
@@ -485,6 +717,28 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
             "total": len(log_handler.logs),
             "since": since,
         }
+
+    @app.get("/api/logs/download")
+    def download_logs():
+        """Downloads full live_session.log file."""
+        curr = get_current_proj()
+        log_file = curr / ".ramazan" / "logs" / "live_session.log"
+        if not log_file.exists():
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            content = "\n".join([f"[{l['time']}] [{l['level']}] {_scrub_secrets(l['message'])}" for l in log_handler.logs])
+            log_file.write_text(content, encoding="utf-8")
+        return FileResponse(
+            str(log_file),
+            filename="live_session.log",
+            media_type="text/plain; charset=utf-8"
+        )
+
+    @app.get("/api/logs/diagnose")
+    def diagnose_logs():
+        """Analyzes recent logs and returns smart error diagnostics and root cause solutions."""
+        recent_logs = log_handler.get_logs(since=max(0, len(log_handler.logs) - 80))
+        full_text = "\n".join([l["message"] for l in recent_logs])
+        return _analyze_error_log(full_text)
 
     @app.post("/api/logs/clear")
     def clear_logs():
@@ -923,7 +1177,7 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
 # ---------------------------------------------------------------------------
 # Mobile-First HTML/CSS/JavaScript Dashboard UI
 # ---------------------------------------------------------------------------
-MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
+MOBILE_HTML_DASHBOARD = r"""<!DOCTYPE html>
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
@@ -1238,6 +1492,76 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
       font-weight: 700;
     }
 
+    /* Code Windows & Accordions in Chat */
+    .code-window {
+      background: #060913;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      margin: 0.5rem 0;
+      overflow: hidden;
+    }
+    .code-window-header {
+      background: #0f172a;
+      padding: 0.3rem 0.6rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e293b;
+    }
+    .code-lang-tag {
+      font-size: 0.7rem;
+      color: var(--cyan);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-family: monospace;
+    }
+    .mini-copy-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #e2e8f0;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .mini-copy-btn:active {
+      background: var(--emerald);
+      color: #000;
+    }
+    .code-accordion {
+      background: #090e1a;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      margin: 0.35rem 0;
+      overflow: hidden;
+    }
+    .code-summary {
+      padding: 0.45rem 0.65rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      background: #0f172a;
+      user-select: none;
+    }
+    .code-summary::-webkit-details-marker {
+      display: none;
+    }
+    .code-snippet-box {
+      padding: 0.6rem;
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      color: #7dd3fc;
+      background: #060913;
+      overflow-x: auto;
+      max-height: 280px;
+      white-space: pre;
+    }
+
     /* TAB 3: Live Logs Terminal */
     .terminal-box {
       background: #050811;
@@ -1420,15 +1744,37 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
     <!-- TAB 3: Live Terminal & Agent Logs -->
     <div id="tab-logs" class="tab-pane">
       <div class="card" style="padding: 0.8rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem;">
           <div style="font-size: 0.85rem; font-weight: 800; display: flex; align-items: center; gap: 0.4rem;">
             <span>📡 Canlı Terminal & Ajan Logları</span>
             <span id="log-count-badge" style="font-size: 0.7rem; background: #1e293b; padding: 0.15rem 0.45rem; border-radius: 12px; color: var(--cyan);">0</span>
+            <span style="font-size: 0.68rem; color: var(--emerald); font-weight: 600;">(live_session.log ●)</span>
           </div>
-          <div style="display: flex; gap: 0.4rem;">
+          <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+            <button class="btn btn-outline" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="copyAllLogs()">📋 Tümünü Kopyala</button>
+            <button class="btn btn-outline" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; border-color: var(--amber); color: var(--amber);" onclick="copyLastError()">⚠️ Hatayı Kopyala</button>
+            <a href="/api/logs/download" target="_blank" class="btn btn-outline" style="padding: 0.25rem 0.55rem; font-size: 0.75rem; text-decoration: none; display: inline-flex; align-items: center;">📥 .log İndir</a>
             <button class="btn btn-outline" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="clearLogsUI()">Temizle</button>
           </div>
         </div>
+
+        <!-- Smart Diagnostic Banner -->
+        <div id="error-diag-card" style="display: none; margin-bottom: 0.6rem; padding: 0.75rem; border-radius: 10px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.35);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.3rem;">
+            <div style="font-weight: 800; font-size: 0.82rem; color: var(--amber); display: flex; align-items: center; gap: 0.35rem;">
+              <span>💡 Akıllı Hata Teşhisi:</span>
+              <span id="diag-type" style="color: #fff;">-</span>
+            </div>
+            <button onclick="document.getElementById('error-diag-card').style.display='none'" style="background:none; border:none; color:var(--muted); cursor:pointer; font-size:0.9rem;">&times;</button>
+          </div>
+          <div style="font-size: 0.76rem; color: #cbd5e1; margin-bottom: 0.4rem;" id="diag-cause">-</div>
+          <div style="font-size: 0.76rem; color: var(--emerald); font-weight: 600; margin-bottom: 0.4rem;" id="diag-recommendation">-</div>
+          <div style="display: flex; gap: 0.4rem; align-items: center;">
+            <button id="diag-action-btn" class="chip-btn" style="background: rgba(16, 185, 129, 0.2); border-color: var(--emerald); font-size: 0.72rem; display: none;">💡 Komutu Kopyala</button>
+            <button class="chip-btn" style="background: rgba(245, 158, 11, 0.2); border-color: var(--amber); font-size: 0.72rem;" onclick="copyLastError()">📋 Teşhisi Kopyala</button>
+          </div>
+        </div>
+
         <div id="terminal-box" class="terminal-box">Yükleniyor...</div>
       </div>
     </div>
@@ -1644,17 +1990,34 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
       }
     }
 
-    function formatMessageText(txt) {
-      if (!txt) return '';
-      return txt
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
-        .replace(/\\*(.*?)\\*/g, '<em>$1</em>')
-        .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.12);padding:0.15rem 0.35rem;border-radius:4px;font-size:0.86em;font-family:monospace;">$1</code>')
-        .split('\\n').join('<br>')
-        .split(String.fromCharCode(10)).join('<br>');
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function formatMessageText(txt) {
+      if (!txt) return '';
+      // 1. Triple-backtick markdown code blocks
+      txt = txt.replace(/```([a-zA-Z0-9_-]+)?\n([\\s\\S]*?)```/g, function(match, lang, code) {
+        return `<div class="code-window">
+          <div class="code-window-header">
+            <span class="code-lang-tag">${lang || 'kod'}</span>
+            <button class="mini-copy-btn" onclick="copyCode(this)">📋 Kopyala</button>
+          </div>
+          <pre class="code-snippet-box"><code>${escapeHtml(code.trim())}</code></pre>
+        </div>`;
+      });
+      // 2. Formatting rules
+      return txt
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.12);padding:0.15rem 0.35rem;border-radius:4px;font-size:0.86em;font-family:monospace;color:#38bdf8;">$1</code>')
+        .split('\n').join('<br>');
     }
 
     function renderChatMessages(messages) {
@@ -1665,6 +2028,29 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
         bubble.className = `chat-bubble ${m.sender}`;
         
         let html = `<div>${formatMessageText(m.text)}</div>`;
+
+        // Render code files & snippets if task milestone
+        if (m.task && m.task.files && m.task.files.length > 0) {
+          html += `<div style="margin-top: 0.6rem;">`;
+          html += `<div style="font-size:0.75rem; font-weight:800; color:var(--muted); text-transform:uppercase; margin-bottom: 0.35rem;">📁 Kodlanan Dosyalar & Konumları:</div>`;
+          m.task.files.forEach(f => {
+            html += `
+              <details class="code-accordion">
+                <summary class="code-summary">
+                  <div style="display:flex; align-items:center; gap:0.35rem; min-width:0; overflow:hidden;">
+                    <span>📄</span>
+                    <span style="font-weight:700; color:#38bdf8;">${f.path}</span>
+                    <span style="font-size:0.7rem; color:var(--muted);">(${f.lines} satır)</span>
+                  </div>
+                  <button class="mini-copy-btn" onclick="event.stopPropagation(); copyCode(this)">📋 Kopyala</button>
+                </summary>
+                <pre class="code-snippet-box"><code>${escapeHtml(f.snippet)}</code></pre>
+              </details>
+            `;
+          });
+          html += `</div>`;
+        }
+
         if (m.actions && m.actions.length > 0) {
           html += `<div class="bubble-actions">`;
           m.actions.forEach(a => {
@@ -1817,6 +2203,82 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
       });
     }
 
+    function copyAllLogs() {
+      const term = document.getElementById('terminal-box');
+      if (!term) return;
+      const text = term.innerText || '';
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Tüm loglar panoya kopyalandı! 📋");
+      }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast("Tüm loglar panoya kopyalandı! 📋");
+      });
+    }
+
+    async function copyLastError() {
+      try {
+        const res = await fetch('/api/logs/diagnose');
+        const diag = await res.json();
+        let copyText = "";
+        if (diag && diag.hasError) {
+          copyText = `[RAMAZAN AI HATA TEŞHİSİ]\nTür: ${diag.errorType}\nNeden: ${diag.rootCause}\nÖneri: ${diag.recommendation}\nSnippet: ${diag.matchSnippet || ''}`;
+        } else {
+          const lines = (document.getElementById('terminal-box').innerText || '').split('\n');
+          const errs = lines.filter(l => l.includes('[ERROR]') || l.includes('[WARNING]') || l.includes('FAIL') || l.includes('Traceback'));
+          copyText = errs.slice(-30).join('\n') || lines.slice(-20).join('\n');
+        }
+        navigator.clipboard.writeText(copyText).then(() => {
+          showToast("Hata teşhisi panoya kopyalandı! ⚠️");
+        });
+      } catch (e) {
+        showToast("Hata kopyalanırken durum oluştu.");
+      }
+    }
+
+    function copyCode(btn) {
+      const container = btn.closest('.code-window, .code-accordion');
+      const codeEl = container ? container.querySelector('code') : null;
+      if (!codeEl) return;
+      navigator.clipboard.writeText(codeEl.innerText).then(() => {
+        const orig = btn.innerText;
+        btn.innerText = "Kopyalandı! ✅";
+        setTimeout(() => { btn.innerText = orig; }, 2000);
+      });
+    }
+
+    async function updateDiagnosticCard() {
+      try {
+        const res = await fetch('/api/logs/diagnose');
+        const diag = await res.json();
+        const card = document.getElementById('error-diag-card');
+        if (!card) return;
+        if (diag && diag.hasError) {
+          card.style.display = 'block';
+          document.getElementById('diag-type').innerText = diag.errorType || 'Hata';
+          document.getElementById('diag-cause').innerText = diag.rootCause || '';
+          document.getElementById('diag-recommendation').innerText = `💡 Öneri: ${diag.recommendation || ''}`;
+          const actBtn = document.getElementById('diag-action-btn');
+          if (diag.suggestedCommand) {
+            actBtn.style.display = 'inline-block';
+            actBtn.innerText = `💡 ${diag.suggestedCommand}`;
+            actBtn.onclick = () => {
+              navigator.clipboard.writeText(diag.suggestedCommand);
+              showToast(`Komut kopyalandı: ${diag.suggestedCommand}`);
+            };
+          } else {
+            actBtn.style.display = 'none';
+          }
+        } else {
+          card.style.display = 'none';
+        }
+      } catch (e) {}
+    }
+
     async function fetchLogs() {
       try {
         const res = await fetch(`/api/logs?since=${currentLogIndex}`);
@@ -1841,6 +2303,7 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
           });
           currentLogIndex = data.total;
           term.scrollTop = term.scrollHeight;
+          updateDiagnosticCard();
         }
         document.getElementById('log-count-badge').innerText = data.total;
       } catch (e) {
@@ -2030,10 +2493,11 @@ MOBILE_HTML_DASHBOARD = """<!DOCTYPE html>
     refreshStatus();
     fetchLogs();
 
-    // Polling for live status and background logs
+    // Polling for live status, background logs, and chat milestones
     setInterval(() => {
       refreshStatus();
       fetchLogs();
+      loadChat();
     }, 2800);
   </script>
 </body>

@@ -163,6 +163,26 @@ class GitManager:
             logger.error(f"Git commit failed: {e}")
             return None
 
+    def push(self, remote_name: str = "origin", branch: Optional[str] = None) -> bool:
+        """
+        Pushes current commits to remote repository (e.g. GitHub).
+        """
+        repo = self.get_repo()
+        if not repo:
+            return False
+        try:
+            cur_branch = branch or (repo.active_branch.name if not repo.head.is_detached else "main")
+            # Check if remote exists
+            if remote_name not in [r.name for r in repo.remotes]:
+                logger.info(f"Remote '{remote_name}' not configured. Skipping git push.")
+                return False
+            repo.git.push(remote_name, cur_branch)
+            logger.info(f"Auto-pushed {cur_branch} to {remote_name} successfully.")
+            return True
+        except Exception as e:
+            logger.warning(f"Git push to {remote_name} skipped/failed: {e}")
+            return False
+
     def rollback(self, files: Optional[List[str]] = None) -> bool:
         """
         Rolls back uncommitted changes. Does not wipe untracked files without confirmation.
