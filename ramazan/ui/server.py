@@ -2,7 +2,7 @@
 FastAPI Server and Mobile-First Web Dashboard for RAMAZAN AI.
 Designed for mobile phones (Termux) and modern desktop browsers.
 Features:
-- Multi-project workspace switcher (auto-detects sonsuz_kosu, uzay_oyunu, etc.)
+- Multi-project workspace switcher (auto-detects isolated projects in projects/)
 - Autonomous playable game & web preview auto-detection
 - Correct MIME type serving for JS, CSS, HTML, SVG, audio, and code
 - Asynchronous non-blocking background workers for Step and Run execution
@@ -279,6 +279,62 @@ def _append_chat_task_milestone(proj_root: Path, task: Any):
         logger.error(f"Error appending chat milestone: {e}")
 
 
+def _append_chat_project_delivery(proj_root: Path):
+    """Adds a clear project delivery card with exact location, test commands, and quick reset."""
+    try:
+        path = proj_root / ".ramazan" / "chat_history.json"
+        history = []
+        if path.exists():
+            try:
+                history = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                history = []
+
+        proj_name = proj_root.name
+        rel_folder = f"projects/{proj_name}"
+
+        commands = []
+        if (proj_root / "tests").exists():
+            commands.append(f"pytest {rel_folder}/tests -v")
+        if (proj_root / "src" / "server.py").exists():
+            commands.append(f"cd {rel_folder} && python -m src.server")
+        elif (proj_root / "main.py").exists():
+            commands.append(f"python {rel_folder}/main.py")
+
+        cmd_block = "\n".join([f"```bash\n{c}\n```" for c in commands]) if commands else f"```bash\ncd {rel_folder}\n```"
+        game_f = _detect_game_file(proj_root)
+
+        delivery_text = (
+            f"🏆 **Proje Başarıyla Tamamlandı ve Teslim Edildi!**\n\n"
+            f"📁 **Proje Konumu:** `{rel_folder}/`\n\n"
+            f"⚡ **Çalıştırma / Test Komutu:**\n{cmd_block}\n\n"
+            f"🛡️ **İzolasyon Durumu:** Ana orkestratör reposu temiz tutuldu. Tüm kodlar, testler ve incelemeler izole klasörde güvende.\n\n"
+            f"✨ Yeni bir proje planlamak istediğinde aşağıdaki butona tıklayabilir veya **'yeni proje'** yazabilirsin!"
+        )
+
+        actions = [
+            {"label": "✨ Yeni Projeye Başla (Sıfırla)", "prompt": "yeni proje"},
+            {"label": "🧪 Proje Testlerini Çalıştır", "prompt": "testleri çalıştır"},
+            {"label": "📋 Görev Özeti", "tab": "tasks"},
+        ]
+        if game_f:
+            actions.insert(1, {"label": f"🎮 {proj_name} Başlat", "playProject": rel_folder, "projectTitle": proj_name})
+
+        entry = {
+            "id": f"msg-{len(history)+1}",
+            "sender": "ramazan",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "project_delivery",
+            "text": delivery_text,
+            "actions": actions,
+        }
+        history.append(entry)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Error appending project delivery: {e}")
+
+
 def _append_chat_task_error(proj_root: Path, task: Any):
     """Adds a clear diagnostic and recovery card to chat history when a task is escalated or fails."""
     try:
@@ -413,6 +469,7 @@ class ExecutionManager:
                     if res.success:
                         proj_name = proj_root.name
                         _append_chat_task_milestone(proj_root, type("SimpleTask", (), {"id": "FINAL_AUDIT", "title": f"'{proj_name.replace('_', ' ').title()}' Tüm Görevler & Final Audit Tamamlandı", "status": "COMPLETED", "files": [], "testStatus": "PASSED", "reviewStatus": "APPROVED"})())
+                        _append_chat_project_delivery(proj_root)
             except Exception as e:
                 logger.exception("Error executing run in background")
                 with self._lock:
@@ -853,17 +910,22 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
                     "- 🕵️ **Reviewer ajanıyla** güvenlik ve mimari denetimi yapıp Git'e commit ederim!\n\n"
                     "Şimdi ne geliştirmemi istersin kanka?"
                 )
+                detected_projects = scan_workspace_projects(base_ws_root)
+                chat_actions = [
+                    {"label": f"🎮 {p['name']}", "playProject": p["folder"], "projectTitle": p["name"]}
+                    for p in detected_projects if p["hasGame"] and p["folder"]
+                ]
+                chat_actions.extend([
+                    {"label": "🚀 Yeni Proje Başlat", "prompt": "Yeni bir proje planlamak istiyorum"},
+                    {"label": "🧪 Testleri Çalıştır", "prompt": "testleri çalıştır"},
+                    {"label": "📋 Görevler Sekmesine Geç", "tab": "tasks"},
+                ])
                 bot_entry = {
                     "id": f"msg-{len(history)+1}",
                     "sender": "ramazan",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "text": resp_text,
-                    "actions": [
-                        {"label": "🎮 Uzay Savaşını Başlat", "playProject": "uzay_oyunu", "projectTitle": "Uzay Savaşı"},
-                        {"label": "🏃 Sonsuz Koşuyu Başlat", "playProject": "sonsuz_kosu", "projectTitle": "Sonsuz Koşu"},
-                        {"label": "🧪 Testleri Çalıştır", "prompt": "testleri çalıştır"},
-                        {"label": "📋 Görevler Sekmesine Geç", "tab": "tasks"},
-                    ],
+                    "actions": chat_actions,
                 }
 
             # 2. API Key ve Mod Durumu
