@@ -54,3 +54,9 @@ tests/.cache/
 .ramazan/chat_history.json
 uploads/
 demo_calc/
+projects/
+binance_bot/
+.gitconfig
+.local/
+.sudo_as_admin_successful
+

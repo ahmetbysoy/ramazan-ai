@@ -1,17 +1,12 @@
 {
   "project": "ramazan_ai",
   "version": 1,
-  "status": "IN_PROGRESS",
+  "status": "READY",
   "currentTask": null,
-  "completedTasks": [
-    "TASK-001",
-    "TASK-002",
-    "TASK-003",
-    "TASK-004"
-  ],
+  "completedTasks": [],
   "failedTasks": [],
   "blockedTasks": [],
-  "totalTasks": 7,
-  "progress": 57.1,
-  "lastUpdated": "2026-09-25T18:33:15.318058+00:00"
+  "totalTasks": 0,
+  "progress": 0.0,
+  "lastUpdated": "2026-09-26T00:00:00+00:00"
 }

@@ -1,7 +1,4 @@
-# Proje Gereksinimleri
+# RAMAZAN AI
 
-## Kullanıcı Talebi
-Hesap makinesi yap
-
-## Tarih
-2026-09-25T23:31:57.427628+00:00
+Çoklu Ajan Otonom Yazılım Mühendisliği Orkestratörü.
+Yeni bir proje talebi bekleniyor.

@@ -411,7 +411,8 @@ class ExecutionManager:
                     }
                     self.message = res.message
                     if res.success:
-                        _append_chat_task_milestone(proj_root, type("SimpleTask", (), {"id": "FINAL_AUDIT", "title": "Tüm Görevler & Final Audit Tamamlandı", "status": "COMPLETED", "files": [], "testStatus": "PASSED", "reviewStatus": "APPROVED"})())
+                        proj_name = proj_root.name
+                        _append_chat_task_milestone(proj_root, type("SimpleTask", (), {"id": "FINAL_AUDIT", "title": f"'{proj_name.replace('_', ' ').title()}' Tüm Görevler & Final Audit Tamamlandı", "status": "COMPLETED", "files": [], "testStatus": "PASSED", "reviewStatus": "APPROVED"})())
             except Exception as e:
                 logger.exception("Error executing run in background")
                 with self._lock:
@@ -447,17 +448,44 @@ def _detect_game_file(folder: Path) -> Optional[Path]:
     return None
 
 
+def _generate_project_slug(prompt: str, base_dir: Path) -> str:
+    """Generates a clean directory slug for newly created isolated projects."""
+    tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+    clean = prompt.translate(tr_map).lower()
+    words = re.findall(r'[a-z0-9]+', clean)
+    stops = {"bir", "ve", "ile", "icin", "bu", "yap", "kodla", "tasarla", "proje", "uygulama", "lutfen", "istiyorum", "bana", "yaz"}
+    keywords = [w for w in words if w not in stops][:3]
+    if not keywords:
+        keywords = ["yeni_proje"]
+    slug = "_".join(keywords)
+    projects_dir = base_dir / "projects"
+    target = projects_dir / slug
+    if target.exists():
+        slug = f"{slug}_{int(time.time()) % 1000}"
+    return slug
+
+
 def scan_workspace_projects(ws_root: Path) -> List[Dict[str, Any]]:
-    """Scans root directory and its immediate subdirectories for RAMAZAN AI projects."""
+    """Scans root directory and projects/ subdirectories for RAMAZAN AI projects."""
     projects: List[Dict[str, Any]] = []
     candidates: List[Path] = [ws_root]
+
+    # Check projects/ subfolder
+    projects_dir = ws_root / "projects"
+    if projects_dir.exists() and projects_dir.is_dir():
+        try:
+            for sub in projects_dir.iterdir():
+                if sub.is_dir() and not sub.name.startswith((".", "__")):
+                    candidates.append(sub)
+        except Exception:
+            pass
 
     try:
         for p in ws_root.iterdir():
             if (
                 p.is_dir()
                 and not p.name.startswith((".", "__"))
-                and p.name not in ["node_modules", "uploads", "tests", "src", "ramazan_ai.egg-info", "build", "dist"]
+                and p.name not in ["node_modules", "uploads", "tests", "src", "ramazan_ai.egg-info", "build", "dist", "projects"]
             ):
                 candidates.append(p)
     except Exception:
@@ -524,6 +552,9 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
 
     def get_current_proj() -> Path:
         return active_root["path"]
+
+    def set_current_proj(target: Path):
+        active_root["path"] = target.resolve()
 
     def _get_chat_history_path() -> Path:
         chat_dir = get_current_proj() / ".ramazan"
@@ -887,7 +918,7 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
                 }
 
             # 4. Adım At / Yürüt
-            elif any(w in msg_lower for w in ["çalıştır", "yürüt", "adım at", "başlat"]) and "tüm" not in msg_lower:
+            elif any(w in msg_lower for w in ["çalıştır", "yürüt", "adım at", "başlat"]) and "tüm" not in msg_lower and "yeni" not in msg_lower:
                 execution_manager.start_step(curr, config)
                 resp_text = (
                     "▶️ **Sıradaki görev arka planda başlatıldı!**\n\n"
@@ -905,12 +936,56 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
                     ],
                 }
 
-            # 5. Genel Yazılım Talebi / Mimari Planlama
+            # 5. Yeni Proje / Kök Dizine Dönüş
+            elif any(w in msg_lower for w in ["yeni proje", "ana menü", "ana dizin", "kök dizin", "yeni görev", "yeni bir şey", "sıfırla", "temizle"]):
+                set_current_proj(base_ws_root)
+                resp_text = (
+                    "✨ **Hazırım kanka! Çalışma alanı yeni bir proje için hazırlandı.**\n\n"
+                    "Geliştirmek istediğin yeni oyunu, web uygulamasını veya servisi yazabilirsin.\n"
+                    "Sen yazdığında `projects/` altında tertemiz yeni bir klasör açıp hemen kodlamaya başlayacağım! 🚀"
+                )
+                bot_entry = {
+                    "id": f"msg-{len(history)+1}",
+                    "sender": "ramazan",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "text": resp_text,
+                    "actions": [
+                        {"label": "🎮 Retro Yılan Oyunu Planla", "prompt": "HTML canvas ile retro yılan oyunu yap"},
+                        {"label": "📊 Kripto Takip Botu Planla", "prompt": "Basit bir kripto fiyat takip scripti yap"},
+                        {"label": "📋 Görevler Sekmesine Geç", "tab": "tasks"},
+                    ],
+                }
+
+            # 6. Genel Yazılım Talebi / Mimari Planlama
             else:
+                # If currently at root, create an isolated directory in projects/<slug>/
+                if curr == base_ws_root:
+                    slug = _generate_project_slug(user_message, base_ws_root)
+                    target_proj = base_ws_root / "projects" / slug
+                    target_proj.mkdir(parents=True, exist_ok=True)
+
+                    # Initialize target project with clean .ramazan config & architecture
+                    p_ramazan = target_proj / ".ramazan"
+                    p_ramazan.mkdir(parents=True, exist_ok=True)
+                    (p_ramazan / "architecture.md").write_text("# Mimari Standartlar\nTemiz modüler mimari ve birim testler zorunludur.\n", encoding="utf-8")
+
+                    # Copy or generate config
+                    p_config = RamazanConfig.load(base_ws_root)
+                    p_config.system.name = slug.replace('_', ' ').title()
+                    p_config.save(target_proj)
+
+                    # Set active project
+                    set_current_proj(target_proj)
+                    curr = target_proj
+                    orch = Orchestrator(curr, p_config)
+                    is_new_isolated = True
+                else:
+                    is_new_isolated = False
+
                 req_file = curr / ".ramazan" / "requirements.md"
                 req_file.parent.mkdir(parents=True, exist_ok=True)
                 req_content = (
-                    f"# Proje Gereksinimleri\n\n"
+                    f"# Proje Gereksinimleri: {curr.name}\n\n"
                     f"## Kullanıcı Talebi\n{user_message}\n\n"
                     f"## Tarih\n{datetime.now(timezone.utc).isoformat()}\n"
                 )
@@ -955,15 +1030,18 @@ def create_app(root_dir: Optional[Path] = None) -> FastAPI:
                 orch.state_manager.recompute(orch.task_engine)
 
                 task_bullets = "\n".join([
-                    f"- **`{t.id}`**: {t.title} *(Öncelik: {t.priority.upper()}, Karmaşıklık: {t.complexity.upper()})*"
+                    f"- **`{t.id}`**: {t.title} *(Öncelik: {t.priority.upper()})*\n  📁 Hedef: {', '.join([f'`{f}`' for f in t.files])}"
                     for t in planned
                 ])
 
+                folder_note = f"📁 **İzole Proje Klasörü:** `projects/{curr.name}/`\n" if is_new_isolated else f"📁 **Aktif Proje:** `{curr.name}`\n"
+
                 resp_text = (
-                    f"Harika fikir kanka! Talebini analiz ettim ve deterministik bir görev grafiği oluşturdum: 🎯\n\n"
-                    f"**Planlanan Görevler ({len(planned)} adet):**\n"
+                    f"🎯 **Talebini aldım kanka! Ajanlar için izole mimari plan hazırlandı:**\n\n"
+                    f"{folder_note}\n"
+                    f"📋 **Planlanan Görevler ({len(planned)} Adet):**\n"
                     f"{task_bullets}\n\n"
-                    f"Pipeline kuruldu! İster aşağıdaki butondan **ilk görevi adım adım başlat**, istersen **tümünü otonom koş**."
+                    f"Ajanlar bu klasör içinde çalışacak; ana sistem temiz kalacak. İster **adım adım başlat**, ister **tümünü otonom koş**!"
                 )
 
                 bot_entry = {
